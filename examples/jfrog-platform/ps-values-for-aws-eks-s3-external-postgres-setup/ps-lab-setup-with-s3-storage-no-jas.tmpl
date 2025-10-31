@@ -1,0 +1,186 @@
+global:
+  versions:
+    artifactory: ${GLOBAL_RT_VERSION}
+    xray: ${XRAY_VERSION}
+  database:
+    initDBCreation: false
+  # imagePullSecrets:
+  #   - myRegistryKeySecretName
+  imageRegistry: releases-docker.jfrog.io
+  jfrogUrl: '{{ include "jfrog-platform.jfrogUrl" . }}'
+  jfrogUrlUI: "https://artifactory.example.com"
+  xray:
+    rabbitmq:
+      replicaCount: 3
+      haQuorum:
+        enabled: true
+artifactory:
+  artifactory:
+    license:
+      secret: ${RT_LICENSE_SECRET_NAME}
+      dataKey: artifactory.lic
+    metrics:
+      enabled: true
+    migration:
+      enabled: true
+    persistence:
+      # size: ${STORAGE_PERSISTENCE_SIZE}
+      # customBinarystoreXmlSecret: ${BINARYSTOREXML_SECRET_NAME}
+      type: s3-storage-v3-direct
+      ## For artifactory.persistence.type aws-s3-v3, s3-storage-v3-direct, cluster-s3-storage-v3, s3-storage-v3-archive
+      awsS3V3:
+        testConnection: false
+        identity:
+        credential:
+        region: "${AWS_DEFAULT_REGION}"
+        bucketName: "${AWS_S3_BUCKET_NAME}"
+        path: artifactory/filestore
+        # endpoint: "${AWS_ENDPOINT_URL}"
+        port:
+        useHttp:
+        maxConnections: 200
+        connectionTimeout: 120000
+        socketTimeout: 240000
+        kmsServerSideEncryptionKeyId:
+        kmsKeyRegion:
+        kmsCryptoMode:
+        useInstanceCredentials: true
+        usePresigning: false
+        signatureExpirySeconds: 300
+        signedUrlExpirySeconds: 30
+        cloudFrontDomainName:
+        cloudFrontKeyPairId:
+        cloudFrontPrivateKey:
+        enableSignedUrlRedirect: false
+        enablePathStyleAccess: false
+        multiPartLimit:
+        multipartElementSize:
+    admin:
+      secret: ${RT_ADMIN_SECRET_NAME}
+      dataKey: bootstrap.creds
+  enabled: true
+  mc:
+    enabled: true
+  probes:
+    timeoutSeconds: 15
+  postgresql:
+    enabled: false
+  waitForDatabase: false
+  database:
+    secrets:
+      user:
+        name: ${RT_DB_SECRET_NAME}
+        key: ${RT_DB_USER_KEY}
+      password:
+        name: ${RT_DB_SECRET_NAME}
+        key: ${RT_DB_PASS_KEY}
+      url:
+        name: ${RT_DB_SECRET_NAME}
+        key: ${RT_DB_URL_KEY}
+  global:
+    masterKeySecretName: ${RT_MASTERKEY_SECRET_NAME}
+    joinKeySecretName: ${RT_JOINKEY_SECRET_NAME}
+insight:
+  enabled: false
+pipelines:
+  enabled: false
+pdnServer:
+  enabled: false
+
+postgresql:
+  enabled: false
+xray:
+  enabled: true
+  unifiedUpgradeAllowed: true
+  rabbitmq:
+    enabled: false
+  openMetrics:
+    enabled: true
+  database:
+    type: postgresql
+    driver: org.postgresql.Driver
+    secrets:
+      user:
+        name: ${XRAY_DB_SECRET_NAME}
+        key: db-user
+      password:
+        name: ${XRAY_DB_SECRET_NAME}
+        key: db-password
+      url:
+        name: ${XRAY_DB_SECRET_NAME}
+        key: db-url
+  common:
+    persistence:
+      size: 200Gi
+    extraEnvVars: |
+      - name: "JF_SHARED_RABBITMQ_VHOST"
+        value: "xray"
+  # serviceAccount:
+  #   create: true
+  # rbac:
+  #   create: true
+  # jas:
+  #   healthcheck:
+  #     enabled: true
+  global:
+    masterKeySecretName: ${XRAY_MASTERKEY_SECRET_NAME}
+    joinKeySecretName: ${RT_JOINKEY_SECRET_NAME}
+rabbitmq:
+  enabled: true
+  rbac:
+    create: true
+  auth:
+    username: admin
+    erlangCookie: secretcookie
+    existingPasswordSecret: ${XRAY_RM_SECRET_NAME}
+  extraConfiguration: |-
+    vm_memory_high_watermark.absolute = 3G
+    {{- if not .Values.global.xray.rabbitmq.haQuorum.enabled }}
+    raft.wal_max_size_bytes = 1048576
+    {{- end }}
+  resources:
+    requests:
+      cpu: "200m"
+      memory: 500Mi
+    limits:
+      # cpu: "2"
+      memory: 4Gi
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - xray
+          topologyKey: kubernetes.io/hostname
+  replicaCount: 3
+  podManagementPolicy: Parallel
+
+catalog:
+  enabled: true
+  replicaCount: 1
+  uiEnabled: true
+  extraSystemYaml:
+    shared:
+      logging:
+        application:
+          enabled: true
+          level: info
+  database:
+    type: postgresql
+    driver: pgx
+    secrets:
+      user:
+        name: ${CATALOG_DB_SECRET_NAME}
+        key: db-user
+      password:
+        name: ${CATALOG_DB_SECRET_NAME}
+        key: db-password
+      url:
+        name: ${CATALOG_DB_SECRET_NAME}
+        key: db-url
+  global:
+    masterKeySecretName: ${CATALOG_MASTERKEY_SECRET_NAME}
+    joinKeySecretName: ${RT_JOINKEY_SECRET_NAME}
