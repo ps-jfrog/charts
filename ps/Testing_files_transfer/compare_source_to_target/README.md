@@ -24,6 +24,7 @@ The script uses the `jf compare` command to perform the comparison and generates
    - Required for generating CSV reports from the comparison database
    - If not available, comparison data will still be in `comparison.db` but CSV export will be skipped
 
+
 ## Quick Start
 
 ### Case a) Compare Two Artifactory Instances
@@ -97,18 +98,18 @@ These flags determine which comparison scenario to run:
 - `COMPARE_TARGET_ARTIFACTORY_SH` - Enable Artifactory SH as target (`0` or `1`)
 - `COMPARE_TARGET_ARTIFACTORY_CLOUD` - Enable Artifactory Cloud as target (`0` or `1`)
 
-### Case a) Required Variables
+### Case a) Compare Artifactory SH to Artifactory Cloud:
 
-Compare Artifactory SH to Artifactory Cloud:
+**Required Variables**
 
 - `SH_ARTIFACTORY_BASE_URL` - Artifactory SH base URL (e.g., `"http://35.229.108.92/artifactory/"`)
 - `SH_ARTIFACTORY_AUTHORITY` - Artifactory SH authority name (e.g., `"app1"`)
 - `CLOUD_ARTIFACTORY_BASE_URL` - Artifactory Cloud base URL (e.g., `"http://34.73.108.59/artifactory/"`)
 - `CLOUD_ARTIFACTORY_AUTHORITY` - Artifactory Cloud authority name (e.g., `"app2"`)
 
-### Case b) Required Variables
+### Case b) Compare Nexus to Artifactory Cloud:
 
-Compare Nexus to Artifactory Cloud:
+**Required Variables**
 
 - `SOURCE_NEXUS_BASE_URL` - Nexus base URL (e.g., `"https://support-team-aaronc-docker-0.jfrog.farm/nexus/"`)
 - `SOURCE_NEXUS_AUTHORITY` - Nexus authority name (e.g., `"stnexus"`)
@@ -117,9 +118,9 @@ Compare Nexus to Artifactory Cloud:
 - `NEXUS_ADMIN_TOKEN` - Nexus admin token
   - **OR** `NEXUS_ADMIN_USERNAME` + `NEXUS_ADMIN_PASSWORD`
 
-### Case c) Required Variables
+### Case c) Compare Nexus to Artifactory SH:
 
-Compare Nexus to Artifactory SH:
+**Required Variables**
 
 - `SOURCE_NEXUS_BASE_URL` - Nexus base URL
 - `SOURCE_NEXUS_AUTHORITY` - Nexus authority name
@@ -288,17 +289,6 @@ Run with -h for help
 
 ## Troubleshooting
 
-### Script Not Exiting
-
-If you're using `watch` to run the script, note that `watch` is designed to repeatedly execute commands. Run the script directly instead:
-
-```bash
-# Correct
-./compare-artifacts.sh
-
-# Incorrect (will loop)
-watch ./compare-artifacts.sh
-```
 
 ### Missing JFrog CLI Profiles
 
@@ -338,12 +328,16 @@ curl -u "$NEXUS_ADMIN_USERNAME:$NEXUS_ADMIN_PASSWORD" "$SOURCE_NEXUS_BASE_URL/se
 
 ## Examples
 
-### Complete Example: Compare Two Artifactory Instances
+### Available Comparison Scenarios
+
+The script supports flexible comparison scenarios based on environment variable flags. **All required environment variables must be set** before running the script.
+
+#### Case a) Compare Two Artifactory Instances (No Nexus)
+
+Compare Artifactory SH to Artifactory Cloud:
 
 ```bash
-#!/bin/bash
-
-# Set all required variables
+# REQUIRED environment variables:
 export COMPARE_SOURCE_NEXUS="0"
 export COMPARE_TARGET_ARTIFACTORY_SH="1"
 export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"
@@ -351,21 +345,21 @@ export SH_ARTIFACTORY_BASE_URL="http://35.229.108.92/artifactory/"
 export SH_ARTIFACTORY_AUTHORITY="app1"
 export CLOUD_ARTIFACTORY_BASE_URL="http://34.73.108.59/artifactory/"
 export CLOUD_ARTIFACTORY_AUTHORITY="app2"
+
+# OPTIONAL (recommended for < 100K artifacts):
 export ARTIFACTORY_DISCOVERY_METHOD="artifactory_filelist"
 
-# Run comparison
 ./compare-artifacts.sh
-
-# Check the generated report
-ls -lh report-artifactory-sh-to-cloud-*.csv
 ```
 
-### Complete Example: Compare Nexus to Artifactory
+**Output:** `report-artifactory-sh-to-cloud-YYYYMMDD-HHMMSS.csv` (includes datetime timestamp)
+
+#### Case b) Compare Nexus to Artifactory Cloud
+
+Compare Nexus repository to Artifactory Cloud:
 
 ```bash
-#!/bin/bash
-
-# Set all required variables
+# REQUIRED environment variables:
 export COMPARE_SOURCE_NEXUS="1"
 export COMPARE_TARGET_ARTIFACTORY_SH="0"
 export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"
@@ -373,15 +367,46 @@ export SOURCE_NEXUS_BASE_URL="https://support-team-aaronc-docker-0.jfrog.farm/ne
 export SOURCE_NEXUS_AUTHORITY="stnexus"
 export CLOUD_ARTIFACTORY_BASE_URL="http://34.73.108.59/artifactory/"
 export CLOUD_ARTIFACTORY_AUTHORITY="app2"
-export NEXUS_ADMIN_TOKEN="your-nexus-token-here"
+export NEXUS_ADMIN_TOKEN="your-token"
+# OR use username/password:
+# export NEXUS_ADMIN_USERNAME="admin"
+# export NEXUS_ADMIN_PASSWORD="password"
 
-# Optional: Use specific repositories
+# OPTIONAL (if using repos.txt file):
 export NEXUS_REPOSITORIES_FILE="repos.txt"
 export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
 
-# Run comparison
 ./compare-artifacts.sh
 ```
+
+**Output:** `report-nexus-to-cloud-YYYYMMDD-HHMMSS.csv` (includes datetime timestamp)
+
+#### Case c) Compare Nexus to Artifactory SH
+
+Compare Nexus repository to Artifactory SH:
+
+```bash
+# REQUIRED environment variables:
+export COMPARE_SOURCE_NEXUS="1"
+export COMPARE_TARGET_ARTIFACTORY_SH="1"
+export COMPARE_TARGET_ARTIFACTORY_CLOUD="0"
+export SOURCE_NEXUS_BASE_URL="https://support-team-aaronc-docker-0.jfrog.farm/nexus/"
+export SOURCE_NEXUS_AUTHORITY="stnexus"
+export SH_ARTIFACTORY_BASE_URL="http://35.229.108.92/artifactory/"
+export SH_ARTIFACTORY_AUTHORITY="app1"
+export NEXUS_ADMIN_TOKEN="your-token"
+# OR use username/password:
+# export NEXUS_ADMIN_USERNAME="admin"
+# export NEXUS_ADMIN_PASSWORD="password"
+
+# OPTIONAL (if using repos.txt file):
+export NEXUS_REPOSITORIES_FILE="repos.txt"
+export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+
+./compare-artifacts.sh
+```
+
+**Output:** `report-nexus-to-sh-YYYYMMDD-HHMMSS.csv` (includes datetime timestamp)
 
 ## Related Documentation
 
