@@ -1,0 +1,52 @@
+gcls-large() {
+  if [ -z "$1" ]; then
+    echo "Usage: gcls-large <gs://bucket/path/> [minutes] [min_size_kb]"
+    echo "  minutes:     Time window in minutes (default: 30)"
+    echo "  min_size_kb: Minimum file size in KB (default: 100)"
+    return 1
+  fi
+
+  bucket="$1"
+  N="${2:-30}"  # Default cutoff = 30 minutes if not provided
+  MIN_SIZE_KB="${3:-100}"  # Default minimum size = 100KB if not provided
+  MIN_SIZE_BYTES=$((MIN_SIZE_KB * 1024))
+  
+  # Calculate cutoff time: current time minus N minutes
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS date command
+    cutoff=$(date -u -v-"${N}"M +"%Y-%m-%dT%H:%M:%SZ")
+  else
+    # Linux date command
+    cutoff=$(date -u -d "${N} minutes ago" +"%Y-%m-%dT%H:%M:%SZ")
+  fi
+
+  echo "📦 Showing files > ${MIN_SIZE_KB}KB in $bucket modified within the last $N minutes (cutoff: $cutoff)"
+  gsutil ls -lrh "$bucket" \
+    | grep -v '/$' \
+    | awk -v c="$cutoff" -v min_size="$MIN_SIZE_BYTES" '
+      # Convert human-readable size to bytes and filter
+      # Format: "   566 B  2025-11-03T07:45:06Z  gs://bucket/path/file"
+      # Format: "   2.5 MB  2025-11-03T07:45:06Z  gs://bucket/path/file"
+      # Fields: $1=size_value, $2=unit, $3=timestamp, $4+=path
+      {
+        # Parse size value (first field, may have decimal)
+        size_value = $1 + 0
+        unit = toupper($2)
+        
+        # Convert to bytes based on unit
+        # Handle both binary (MiB, KiB, GiB) and decimal (MB, KB, GB) units
+        if (unit == "GIB" || unit == "GB") size_bytes = size_value * 1024 * 1024 * 1024
+        else if (unit == "MIB" || unit == "MB") size_bytes = size_value * 1024 * 1024
+        else if (unit == "KIB" || unit == "KB") size_bytes = size_value * 1024
+        else if (unit == "B") size_bytes = size_value
+        else size_bytes = size_value  # Default: treat as bytes
+        
+        # Check if file meets criteria: timestamp >= cutoff AND size >= min_size
+        if ($3 >= c && size_bytes >= min_size) {
+          print
+        }
+      }
+    ' \
+    | sort -k3,3 -s
+}
+

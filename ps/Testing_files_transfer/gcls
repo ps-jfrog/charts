@@ -1,0 +1,16 @@
+gcls() {
+  if [ -z "$1" ]; then
+    echo "Usage: gcls <gs://bucket/path/> [days]"
+    return 1
+  fi
+
+  bucket="$1"
+  N="${2:-2}"  # Default cutoff = 2 days if not provided
+  cutoff=$(date -u -v-"${N}"d +"%Y-%m-%dT%H:%M:%SZ")
+
+  echo "📅 Showing files in $bucket modified within the last $N days (cutoff: $cutoff)"
+  gsutil ls -lrh "$bucket" \
+    | grep -v '/$' \
+    | awk -v c="$cutoff" '$2 >= c' \
+    | sort -k2,2 -t'T' -s
+}
