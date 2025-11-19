@@ -87,8 +87,12 @@ bash /Users/sureshv/mycode/github.jfrog.info/ps_jfrog_scripts/jf-transfer-migrat
 In `app1`, create a Docker repository `sv-docker-local` and publish Docker images.
 
 **Tools:**
+<!--
 - https://github.com/sureshvenkatesan/utils/tree/main/publish_to_artifactory/docker_publish
 - https://github.com/ps-jfrog/ps-coupa/blob/main/rt_docker_repo_performance_test/
+-->
+- https://github.com/ps-jfrog/charts/blob/master/ps/publish_to_artifactory/docker_publish
+- https://github.com/ps-jfrog/charts/blob/master/ps/rt_docker_repo_performance_test
 
 ```bash
 # Set Docker credentials as environment variables
