@@ -4,6 +4,7 @@
 
 # Works on macOS and Linux, supports multiple base64-encoded license blobs
 # Pure bash implementation (no Python)
+set -euo pipefail
 
 licfile="$1"
 
