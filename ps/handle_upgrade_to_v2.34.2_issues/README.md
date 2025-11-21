@@ -162,18 +162,28 @@ kubectl wait --for=delete pod -l app.kubernetes.io/name=postgresql -n jfrog-dist
 
 **Note**: If you encountered the StatefulSet error, complete Step 1.5 first, then proceed with this step.
 
-**CRITICAL**: After running the script, you must update your `values-distribution_102_31_and_newer.yaml` (or the values file used by your Distribution chart) to match the password that was extracted.
+**CRITICAL**: After running the script, you must update your custom values file used by your Distribution chart  ( `values-distribution_102_31_and_newer.yaml` in my test)  to match the password that was extracted.
 
 According to [JFrog's documentation on auto-generated passwords for internal PostgreSQL](https://jfrog.com/help/r/jfrog-installation-setup-documentation/auto-generated-passwords-internal-postgresql), you need to set the password in your values file.
 
-**Example** (update `values-distribution_102_31_and_newer.yaml`):
+**Example** ( from my custom `values-distribution_102_31_and_newer.yaml`):
 
 ```yaml
+## ref: https://github.com/bitnami/charts/blob/master/bitnami/postgresql/README.md
 postgresql:
   enabled: true
+  # Pin PostgreSQL version to 15 to maintain compatibility with existing data
+  # When upgrading from Distribution chart 102.29.1 (PostgreSQL 15) to 102.34.2 (PostgreSQL 16),
+  # the data directory is incompatible. PostgreSQL 15 to 16 is a major version upgrade requiring migration.
+  # Pinning to 15 avoids data migration. To upgrade to 16 later, perform a proper major version upgrade.
+  # Reference: https://github.com/jfrog/charts/blob/distribution/2.33.2/stable/distribution/values.yaml
+  image:
+    registry: releases-docker.jfrog.io
+    repository: bitnami/postgresql
+    tag: 15.6.0-debian-11-r16
   auth:
     username: "distribution"
-    password: "distribution"  # Must match the password extracted by the script
+    password: "distribution"  # Must match the password extracted by the fix-distribution-postgresql-secret.sh script
     database: "distribution"
 ```
 
@@ -189,7 +199,7 @@ kubectl get secret jpd-dist1-distribution-postgresql -n jfrog-dist1 \
   -o jsonpath="{.data.password}" | base64 -d
 ```
 
-### Step 3: Rerun Helm Upgrade (via Terraform)
+### Step 3: Rerun Helm Upgrade (via Terraform , or helm or ArgoCD )
 
 After updating the values file, rerun the Helm upgrade:
 
@@ -315,7 +325,7 @@ kubectl delete statefulset jpd-dist1-distribution-postgresql -n jfrog-dist1
 kubectl wait --for=delete pod -l app.kubernetes.io/name=postgresql -n jfrog-dist1 --timeout=60s
 ```
 
-**Step 2: Update `values-distribution_102_31_and_newer.yaml`**:
+**Step 2: Update your custom values (`values-distribution_102_31_and_newer.yaml` in my test)**:
 
 ```yaml
 postgresql:
