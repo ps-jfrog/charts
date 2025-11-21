@@ -218,6 +218,8 @@ jf rt transfer-files --filestore=true --include-repos "sv-docker-local" app1 app
 
 **Note:** The `--filestore` flag tells the transfer process to check if binaries already exist in the filestore before transferring, significantly improving performance for delta transfers.
 
+---
+<!-->
 ## Performance Testing
 
 ### Test Performance with --filestore Option
@@ -266,6 +268,9 @@ This test confirms that using the `--filestore` option provides significant perf
    ```
 
    **Result:** Takes 1 minute 3 seconds for 103.6MB (approximately 50% faster).
+-->
+
+---
 
 ## Verification
 
