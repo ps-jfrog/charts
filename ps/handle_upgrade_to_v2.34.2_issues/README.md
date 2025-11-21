@@ -102,6 +102,7 @@ For a deployment with `release_name = "jpd-dist1"` and `namespace = "jfrog-dist1
    - Tries to extract from old format (`postgresql-password`)
    - Falls back to new format (`password`) if already migrated
    - If password is blank, attempts to extract from PostgreSQL pod environment
+   Note: If the PostgreSql password is not invalid in a Kubernetes Pod and we are unable to determine the correct password for PostgreSql for any postgresql pod we can follow these steps to reset back to the needed password using KB [POSTGESQL FOR HELM: Getting SQLSTATE 28P01 password authentication failed for user in PostgreSQL](https://jfrog.com/help/r/postgesql-for-helm-getting-sqlstate-28p01-password-authentication-failed-for-user-in-postgresql) (Ref 382641 ). 
 3. **Deletes old secret**: Removes the secret with old key format
 4. **Creates new secret**: Creates a new secret with correct format (`password`, `postgres-password`)
 5. **Verifies migration**: Confirms the new secret has the correct password
