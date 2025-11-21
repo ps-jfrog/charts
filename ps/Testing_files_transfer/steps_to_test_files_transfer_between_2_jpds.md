@@ -46,8 +46,8 @@ helm list -n jfrog-dev
 
 ### 3. Install Data Transfer Plugin in Source JPD (app1)
 
-Install the data transfer plugin in the source JPD using:
-https://git.jfrog.info/projects/PROFS/repos/ps_jfrog_scripts/browse/jf-transfer-migration-helper-scripts/before-migration-helper-scripts/install_migration_plugins/install_source_rt_plugins
+Install the data transfer plugin in the source JPD. For detailed instructions, see the [install_source_rt_plugins README](install_migration_plugins/install_source_rt_plugins/README.md).
+<!-- https://git.jfrog.info/projects/PROFS/repos/ps_jfrog_scripts/browse/jf-transfer-migration-helper-scripts/before-migration-helper-scripts/install_migration_plugins/install_source_rt_plugins -->
 
 ```bash
 # Extract URL and access token from JFrog CLI configuration
@@ -66,9 +66,10 @@ bash /Users/sureshv/mycode/github.jfrog.info/ps_jfrog_scripts/jf-transfer-migrat
 
 ### 4. Install Config Import Plugin in Target JPD (app2)
 
-Install the config import plugin in the target JPD using:
-https://git.jfrog.info/projects/PROFS/repos/ps_jfrog_scripts/browse/jf-transfer-migration-helper-scripts/before-migration-helper-scripts/install_migration_plugins/install_target_rt_plugins
+Install the config import plugin in the target JPD . For detailed instructions, see the
 
+[install_target_rt_plugins README](install_migration_plugins/install_target_rt_plugins/README.md).
+<!-- https://git.jfrog.info/projects/PROFS/repos/ps_jfrog_scripts/browse/jf-transfer-migration-helper-scripts/before-migration-helper-scripts/install_migration_plugins/install_target_rt_plugins -->
 ```bash
 # Extract URL and access token from JFrog CLI configuration
 CLI_CONFIG=$(jf c export app2 | base64 -d)
@@ -288,6 +289,34 @@ This confirms that:
 1. Large files were already present from the filestore rsync
 2. The transfer process correctly detected them via checksum verification
 3. Only metadata and missing files were transferred
+
+## Repository-Level Comparison Report
+
+After the artifact/data transfer is complete, you can generate a high-level comparison report of repositories between the source and target Artifactory instances using the repository comparison tools.
+
+### Overview
+
+The [compare_repo_list_details_in_source_vs_target_rt_after_migration.py](AllReposComparisonReport/compare_repo_list_details_in_source_vs_target_rt_after_migration.py) Python script compares a list of repositories between source and target Artifactory instances and generates a comprehensive comparison report. The report includes:
+
+- Tabular comparison of repositories showing file counts, used space, and differences
+- Identification of repositories with space differences
+- Repositories with both file count and space differences
+- Transfer commands for repositories requiring migration
+- Repodiff commands for detailed repository comparison
+
+The generated report is similar to the [example comparison report](AllReposComparisonReport/output/comparison_report_jun17_2024.txt), providing a clear overview of what has been transferred and what remains.
+
+For detailed usage instructions and examples, refer to the [AllReposComparisonReport README](AllReposComparisonReport/readme.md).
+
+### Automated Report Generation
+
+The [prepare_and_generate_comparison_report.sh](prepare_and_generate_comparison_report/prepare_and_generate_comparison_report.sh) script automates the process of generating the comparison report. It:
+
+- Calculates storage info for both source and target Artifactory instances
+- Retrieves repository lists from both instances
+- Executes the comparison script to generate the comprehensive report
+
+This script simplifies the workflow by handling all the prerequisite steps before running the comparison. For more information, see the [prepare_and_generate_comparison_report README](prepare_and_generate_comparison_report/README.md).
 
 ## Comparing Artifacts Between Instances
 
