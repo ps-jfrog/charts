@@ -304,13 +304,77 @@ jf c show app1
 
 ### sqlite3 Not Found
 
-If `sqlite3` is not installed, the script will still run but won't generate CSV reports. The comparison data will be available in `comparison.db`:
+If `sqlite3` is not installed, the script will still run but won't generate CSV reports. The comparison data will be available in `comparison.db`. To generate CSV reports, you need to install `sqlite3`.
+
+#### Installing sqlite3
+
+**Linux:**
+
+- **Debian/Ubuntu:**
+  ```bash
+  sudo apt-get update
+  sudo apt-get install sqlite3
+  ```
+
+- **RHEL/CentOS/Fedora:**
+  ```bash
+  # RHEL/CentOS 7/8
+  sudo yum install sqlite
+
+  # RHEL/CentOS 9 or Fedora
+  sudo dnf install sqlite
+  ```
+
+- **Alpine Linux:**
+  ```bash
+  sudo apk add sqlite
+  ```
+
+- **Arch Linux:**
+  ```bash
+  sudo pacman -S sqlite
+  ```
+
+**Windows:**
+
+- **Using Chocolatey (if installed):**
+  ```powershell
+  choco install sqlite
+  ```
+
+- **Using Scoop (if installed):**
+  ```powershell
+  scoop install sqlite
+  ```
+
+- **Manual Installation:**
+  1. Download precompiled binaries from [SQLite Downloads](https://www.sqlite.org/download.html)
+  2. Download the "sqlite-tools-win-x64-*.zip" (or win-x86 for 32-bit)
+  3. Extract the ZIP file
+  4. Add the extracted folder to your PATH environment variable, or copy `sqlite3.exe` to a directory already in your PATH
+
+**macOS:**
 
 ```bash
-# Install sqlite3 (macOS)
+# Using Homebrew
 brew install sqlite3
+```
 
-# Or use the database directly
+#### Verifying Installation
+
+After installation, verify that `sqlite3` is available:
+
+```bash
+sqlite3 --version
+```
+
+Once installed, the script will automatically detect `sqlite3` and generate CSV reports on subsequent runs.
+
+#### Alternative: Using the Database Directly
+
+If `sqlite3` is not available, you can still query the database directly (if you have access to a system with sqlite3):
+
+```bash
 sqlite3 comparison.db "SELECT * FROM mismatch;" --csv > report.csv
 ```
 
