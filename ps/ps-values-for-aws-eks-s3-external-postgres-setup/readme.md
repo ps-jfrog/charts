@@ -45,12 +45,19 @@ the blog https://jfrog.com/blog/install-artifactory-on-eks/ ( See "Step 3: Confi
 The relevant Helm values section similar to the blog is in  
 [Deploying_in_AWS_EKS.md – values.yaml Artifactory Helm Config](./Deploying_in_AWS_EKS.md#-valuesyaml-artifactory-helm-config)
 
+Some relevant JFrog Doc links for Creds to access the S3 bucket  are in:
+- [ARTIFACTORY: Connect Artifactory to S3 Bucket with IAM Role](https://jfrog.com/help/r/active/artifactory-connect-artifactory-to-s3-bucket-with-iam-role)
+- [Configure Artifactory to Use S3 Storage](https://jfrog.com/help/r/jfrog-installation-setup-documentation/configure-artifactory-to-use-s3-storage)
+- [ARTIFACTORY: How to Configure an AWS S3 Object Store Using an IAM Role Instead of an IAM User](https://jfrog.com/help/r/artifactory-how-to-configure-an-aws-s3-object-store-using-an-iam-role-instead-of-an-iam-user)
 
 ---
 
 ### 3. Deploying the Helm chart with custom values
 Deploy the JFrog platform helm chart with your custom values in temp/secrets.yaml similar to 
 [../../terraform/jfrog-platform-aws-install/README.md#install-jfrog-platform](../../terraform/jfrog-platform-aws-install/README.md#install-jfrog-platform):
+<!
+https://github.com/jfrog/charts/blob/master/examples/terraform/jfrog-platform-aws-install/README.md#install-jfrog-platform: 
+-->
 
 ```
 helm repo add jfrog https://charts.jfrog.io
@@ -79,13 +86,26 @@ distribution: 2.32.0
 worker: 1.153.0
 ```
 
+<!--
+Use the custom T-shirt size from the JFrog Platform chart sizing recommendations in https://github.com/jfrog/charts/blob/master/stable/jfrog-platform/sizing/
+
+Use the `rabbitmq HA Quorum` configuration from https://github.com/jfrog/charts/blob/master/stable/xray/rabbitmq/ha-quorum.yaml
+and `rabbitmq` configuration from  https://github.com/jfrog/charts/blob/master/stable/xray/sizing/xray-large.yaml
+-->
 Use the custom T-shirt size from the JFrog Platform chart sizing recommendations in [../../../stable/jfrog-platform/sizing/](../../../stable/jfrog-platform/sizing/)
 
 Use the `rabbitmq HA Quorum` configuration from [../../../stable/xray/rabbitmq/ha-quorum.yaml](../../../stable/xray/rabbitmq/ha-quorum.yaml)
 and `rabbitmq` configuration from  [../../../stable/xray/sizing/xray-large.yaml](../../../stable/xray/sizing/xray-large.yaml)
-
 The JFrog Platform chart uses the following child charts which have :
 the T-shirt sizes and the default values.yaml for the underlying applications:
+<!--
+| Application  | T-Shirt Sizes Link | Default `values.yaml` Link |
+|---------------|--------------------|-----------------------------|
+| **Artifactory** | [sizing](https://github.com/jfrog/charts/tree/master/stable/artifactory/sizing) | [values.yaml](https://github.com/jfrog/charts/blob/master/stable/artifactory/values.yaml) |
+| **Xray** | [sizing](https://github.com/jfrog/charts/tree/master/stable/xray/sizing) | [values.yaml](https://github.com/jfrog/charts/blob/master/stable/xray/values.yaml) |
+| **Catalog** | N/A | [values.yaml](https://github.com/jfrog/charts/blob/master/stable/catalog/values.yaml) |
+| **Distribution** | [sizing](https://github.com/jfrog/charts/tree/master/stable/distribution/sizing) | [values.yaml](https://github.com/jfrog/charts/blob/master/stable/distribution/values.yaml) |
+-->
 
 | Application  | T-Shirt Sizes Link | Default `values.yaml` Link |
 |---------------|--------------------|-----------------------------|

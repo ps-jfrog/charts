@@ -64,12 +64,23 @@ bash /Users/sureshv/mycode/github.jfrog.info/ps_jfrog_scripts/jf-transfer-migrat
   $APP1_JFROG_ACCESS_TOKEN
 ```
 
+Note: If the Plugin reload step fails with below errors:
+- `Failed Loading: dataTransfer.groovy` and `unable to resolve class com.jfrog.ResponsePair`  ( see [errors/Failed_Loading_dataTransfer_groovy.txt](errors/Failed_Loading_dataTransfer_groovy.txt)) it is usually because the `$JFROG_HOME/var/etc/artifactory/plugins/lib/data-transfer.jar` is not owned by the artifactory service user.
+
+You can also verify if the `$JFROG_HOME/var/etc/artifactory/plugins/lib/data-transfer.jar`  and `$JFROG_HOME/var/etc/artifactory/plugins/dataTransfer.groovy ` got downloaded correctly  and have the same permissions as the artifactory service user.
+
+Then the "/opt/jfrog/artifactory/var/tmp/jf rt curl -X POST "/api/plugins/reload" --server-id source-server" should show  a success message as per [install_migration_plugins/install_source_rt_plugins/2_install-transfer-plugin.sh](install_migration_plugins/install_source_rt_plugins/2_install-transfer-plugin.sh)
+
+
+
+
 ### 4. Install Config Import Plugin in Target JPD (app2)
 
 Install the config import plugin in the target JPD . For detailed instructions, see the
 
 [install_target_rt_plugins README](install_migration_plugins/install_target_rt_plugins/README.md).
 <!-- https://git.jfrog.info/projects/PROFS/repos/ps_jfrog_scripts/browse/jf-transfer-migration-helper-scripts/before-migration-helper-scripts/install_migration_plugins/install_target_rt_plugins -->
+
 ```bash
 # Extract URL and access token from JFrog CLI configuration
 CLI_CONFIG=$(jf c export app2 | base64 -d)
@@ -116,7 +127,16 @@ Create the repositories in the target JPD:
 
 ```bash
 jf rt transfer-config-merge --include-projects "" --include-repos "sv-docker-local" app1 app2
+or
+
+jf rt transfer-config-merge --include-projects "" --include-repos "*" app1 app2
 ```
+
+#### Step 5c: Disable the Artifactory Garbage Collection in target i.e app2
+
+Disable Artifactory Garbage Collection  in the target/destination Artifactory instance by setting the next GC event to happen some time in the far future ( i.e after all the migraton is completed)
+
+For example set the cron value to  `0 0 0 ? * * 2030/1` i.e Runs daily at 00:00 for all years ≥ 2030 as mentioned in [ARTIFACTORY: How to temporarily disable Garbage Collection?](https://jfrog.com/help/r/artifactory-how-to-temporarily-disable-garbage-collection/artifactory-how-to-temporarily-disable-garbage-collection)
 
 ## File Transfer Methods
 

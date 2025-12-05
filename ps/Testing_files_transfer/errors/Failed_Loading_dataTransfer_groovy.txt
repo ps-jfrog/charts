@@ -1,0 +1,53 @@
+`Failed Loading: dataTransfer.groovy` errro when running the 1_run-transfer-plugin-install.sh script in Artifactory VM:
+
+```
+Downloading JFrog CLI to /opt/jfrog/artifactory/var/tmp...
+Downloading the latest version of JFrog CLI..
+Downloading from: https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/[RELEASE]/jfrog-cli-linux-amd64/jf
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 78.1M  100 78.1M    0     0     72.8M      0  0:00:01  0:00:01 --:--:--  78.6M
+✔ Setting executable permission...
+✔ Configuring JFrog CLI with Artifactory at http://localhost:8082/artifactory...
+✔ Verifying connection with Artifactory...
+OK
+✔ JFrog CLI setup completed successfully.
+Installing Data Transfer plugin (release: [RELEASE])...
+✔ Data Transfer plugin installed successfully.
+
+↻ Reloading plugins using JFrog CLI...
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   57    0    57    0     0      66      0 --:--:-- --:--:-- --:--:--   66
+Successfully loaded:
+Failed Loading: dataTransfer.groovy
+✔ Plugin reload successful.
+```
+
+=========
+
+In the artifactory pod logs we see:
+
+```
+2025-12-03T17:31:20.647Z [jfrt ] [ERROR] [6def8836f3b6eae3] [o.a.a.p.GroovyRunnerImpl:380 ] [http-nio-8081-exec-7] - Error loading script from '/opt/jfrog/artifactory/var/etc/artifactory/plugins/dataTransfer.groovy'.
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+file:/opt/jfrog/artifactory/var/etc/artifactory/plugins/dataTransfer.groovy: 1: unable to resolve class com.jfrog.ResponsePair
+ @ line 1, column 1.
+   import com.jfrog.ResponsePair
+   ^
+
+file:/opt/jfrog/artifactory/var/etc/artifactory/plugins/dataTransfer.groovy: 2: unable to resolve class com.jfrog.filestransfer.FilesTransfer
+ @ line 2, column 1.
+   import com.jfrog.filestransfer.FilesTransfer
+   ^
+
+file:/opt/jfrog/artifactory/var/etc/artifactory/plugins/dataTransfer.groovy: 3: unable to resolve class com.jfrog.general.General
+ @ line 3, column 1.
+   import com.jfrog.general.General
+   ^
+
+3 errors
+
+```
+
+=========
