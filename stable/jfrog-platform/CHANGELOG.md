@@ -1,6 +1,23 @@
 # JFrog Platform Chart Changelog (GA releases only)
 All changes to this chart will be documented in this file.
 
+## [11.3.4] - December 12, 2025
+* Update dependency xray chart version to 103.131.25
+* Update dependency catalog chart version to 101.28.3
+* Added `openshift-values.yaml` file for openshift deployment, please refer [here](README.md#openshift-deployment)
+
+## [11.3.3] - December 05, 2025
+* Update dependency artifactory chart version to 107.125.8
+* Update dependency xray chart version to 103.131.23
+* Update dependency distribution chart version to 102.35.0
+* Update dependency catalog chart version to 101.27.1
+* Added support for pod split deployment in Xray chart version 3.124.x and above. When enabled, each Xray service runs in a separate container within dedicated pods. For configuration details, see [Xray with Pod Split](https://github.com/jfrog/charts/tree/master/examples/jfrog-platform/xray-with-pod-split)
+
+## [11.3.2] - November 19, 2025
+* Update dependency artifactory chart version to 107.125.7
+* Update dependency xray chart version to 103.131.20
+* Update dependency catalog chart version to 101.27.0
+
 ## [11.3.1] - November 05, 2025
 * Update dependency artifactory chart version to 107.125.6
 * Update dependency xray chart version to 103.124.32

@@ -1,0 +1,25 @@
+
+# upgrades
+databaseUpgradeReady: true
+
+# artifactory subchart
+artifactory:
+  enabled: true
+
+# xray subchart
+xray:
+  enabled: true
+
+# catalog subchart
+catalog:
+  enabled: true
+
+# distribution subchart
+distribution:
+  enabled: true
+
+# worker subchart
+worker:
+  enabled: true
+
+
