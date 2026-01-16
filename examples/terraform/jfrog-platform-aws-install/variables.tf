@@ -26,11 +26,11 @@ variable "private_subnet_cidrs" {
 }
 
 variable "kubernetes_version" {
-  default = "1.32"
+  default = "1.34"
 }
 
 variable "rds_postgres_version" {
-  default = "16.4"
+  default = "17.7"
 }
 
 variable "artifactory_rds_size_default" {
@@ -259,6 +259,15 @@ variable "catalog_db_password" {
   description = "The password for the database"
   sensitive   = true
   default     = "PasswordC321"
+}
+
+# The AMI type for the EKS Managed Node Groups. 
+# Currently using Graviton (ARM64) instances, with the AL2023_ARM_64_STANDARD image type.
+# For AMD64 instances, use the AL2023_x86_64_STANDARD image type.
+# Make sure to adjust the instance types accordingly.
+variable "ami_type" {
+  description = "The AMI type for the EKS Managed Node Groups."
+  default = "AL2023_ARM_64_STANDARD"
 }
 
 variable "jfrog_charts_repository" {
