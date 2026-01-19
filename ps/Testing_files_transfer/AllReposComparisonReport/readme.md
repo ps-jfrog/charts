@@ -92,9 +92,10 @@ sed -E 's/"key" *: *"([^"]*)"/\1/' >> all_local_repos_in_source.txt
 
 or
 
-jf rt curl -X GET "/api/repositories?type=local" -s --server-id=source | \
-awk -F'"key":' '{for (i=2; i<=NF; i++) print $i}' | \
+jf rt curl -X GET "/api/repositories?type=local" -s --server-id=psemea | \
+awk -F'"key"[[:space:]]*:[[:space:]]*' '{for (i=2; i<=NF; i++) print $i}' | \
 awk -F'"' '{print $2}' >> all_local_repos_in_source.txt
+
 ```
 Next sort this list of repos using:
 ```

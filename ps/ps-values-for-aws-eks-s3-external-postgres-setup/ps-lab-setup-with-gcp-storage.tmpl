@@ -30,7 +30,12 @@ artifactory:
       - name: artifactory-gcp-creds
         mountPath: "/tmp/gcp.credentials.json"
         subPath: gcp.credentials.json
-    preStartCommand: cp -fv /tmp/gcp.credentials.json {{ .Values.artifactory.persistence.mountPath }}/etc/artifactory/gcp.credentials.json
+    preStartCommand: >
+      (sed -i 's, -Xms512m -Xmx2g,,g' /opt/jfrog/artifactory/app/bin/artifactory.default ||
+      echo "ERROR: Removing Xms and Xmx from artifactory.default failed" ) &&
+      cp -fv /tmp/gcp.credentials.json {{ .Values.artifactory.persistence.mountPath }}/etc/artifactory/gcp.credentials.json
+
+  
     admin:
       secret: ${RT_ADMIN_SECRET_NAME}
       dataKey: bootstrap.creds
