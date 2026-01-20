@@ -109,6 +109,7 @@ the T-shirt sizes and the default values.yaml for the underlying applications:
 
 | Application  | T-Shirt Sizes Link | Default `values.yaml` Link |
 |---------------|--------------------|-----------------------------|
+| **Platform** | [sizing](../../stable/jfrog-platform/sizing) | [values.yaml](../../stable/jfrog-platform/values.yaml) |
 | **Artifactory** | [sizing](../../stable/artifactory/sizing) | [values.yaml](../../stable/artifactory/values.yaml) |
 | **Xray** | [sizing](../../stable/xray/sizing) | [values.yaml](../../stable/xray/values.yaml) |
 | **Catalog** | N/A | [values.yaml](../../stable/catalog/values.yaml) |
