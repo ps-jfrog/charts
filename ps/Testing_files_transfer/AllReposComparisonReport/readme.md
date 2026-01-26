@@ -79,6 +79,15 @@ jf rt curl -X GET "/api/storageinfo" --server-id=target > target_storageinfo.jso
 ```
 jf rt curl  -X GET "/api/repositories?type=local"  --server-id=source | jq -r '.[] | .key' >> all_local_repos_in_source.txt
 ```
+
+Note: If you want list of `local` repos in semicolon seperated format:
+```
+jf rt curl -X GET "/api/repositories?type=local" -s --server-id=app2 \
+| jq -r '.[].key' \
+| paste -sd ';' -
+```
+
+
 If you don't have `jq` you can use:
 ```
 jf rt curl -X GET "/api/repositories?type=local" -s --server-id=source | \
