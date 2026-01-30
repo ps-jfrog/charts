@@ -238,7 +238,14 @@ jf rt transfer-files --filestore=true --include-repos "sv-docker-local" app1 app
 ```
 
 **Note:** The `--filestore` flag tells the transfer process to check if binaries already exist in the filestore before transferring, significantly improving performance for delta transfers.
+It  is recommended that the  filestore i.e target Artifactory  bucket  is already synched with the delta files  from the source Artifactory's filestore bucket since you are using the “--filestore=true” flag :
 
+
+This is only a recommendation because  even if an artifact binary is not present in the target Artifactory filestore, the delta binaries are fully transferred from source to target.
+
+`--filestore=true` does not cause “metadata-only” creation when the binary is missing. 
+
+Metadata-only creation happens only when the target filestore already contains the binary and a checksum deploy succeeds , speeding up the transfer process because then only the metadata sync  has to be done in the target artifactory ( to persist in the database) .
 ---
 <!-->
 ## Performance Testing
