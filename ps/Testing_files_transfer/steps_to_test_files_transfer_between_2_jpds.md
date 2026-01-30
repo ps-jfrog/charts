@@ -246,6 +246,7 @@ This is only a recommendation because  even if an artifact binary is not present
 `--filestore=true` does not cause “metadata-only” creation when the binary is missing. 
 
 Metadata-only creation happens only when the target filestore already contains the binary and a checksum deploy succeeds , speeding up the transfer process because then only the metadata sync  has to be done in the target artifactory ( to persist in the database) .
+
 ---
 <!-->
 ## Performance Testing
