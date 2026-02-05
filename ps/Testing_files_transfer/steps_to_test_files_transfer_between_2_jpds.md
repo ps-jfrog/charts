@@ -183,11 +183,13 @@ But 3MB files are not retransferred:
 
 ### Method 2: Delta Transfer (Filestore Only, No DB Metadata)
 
-**When to use:** Only binaries are rsynced from `jpd-dev` (app1) to `jpd-prod` (app2), and metadata is **not** in DB. This is the case for delta transfers.
+**When to use:** Only binaries are rsynced from `jpd-dev` (app1) to `jpd-prod` (app2), and metadata is **not** in Artifactory Database. This is the case for delta transfers.
 
 #### Step 7a: Enable Checksum Replication
 
-**Prerequisite:** Enable checksum replication before using the `--filestore` option.
+**Prerequisite:** Enable checksum replication before using the `--filestore=true` option.
+
+**Note:** The "Enable checksum replication" and using `--filestore=true` option is needed only because there are no references in the Artifactory Database for any of the delta binaries. If all the delta binaries had a database reference i.e same sha1 binaries are present in any other repository in artifactory then the  "Enable checksum replication" and using `--filestore=true` option is not needed.
 
 Reference: [Manually copying the filestore to reduce the transfer time](https://docs.jfrog-applications.jfrog.io/jfrog-applications/jfrog-cli/cli-for-jfrog-cloud-transfer#manually-copying-the-filestore-to-reduce-the-transfer-time)
 
