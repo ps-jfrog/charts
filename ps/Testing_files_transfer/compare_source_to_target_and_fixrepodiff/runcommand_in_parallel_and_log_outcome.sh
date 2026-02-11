@@ -1,5 +1,6 @@
 #!/bin/bash
 # usage: ./patch_props_for_artifacts_in_target.sh usvartifactory5 liquid jfrogio liquid  test | ./runcommand_in_parallel_and_log_outcome.sh properties_patch_failed.txt 16
+# cat test_reconcile_target_only/03_to_sync.sh | bash ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/runcommand_in_parallel_and_log_outcome.sh test_reconcile_target_only/03_to_sync_out.txt 10
 
 log_file=$1
 max_parallel="$2"

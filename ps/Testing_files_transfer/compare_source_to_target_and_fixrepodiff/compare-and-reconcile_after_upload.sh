@@ -39,18 +39,30 @@ export JFROG_CLI_LOG_LEVEL="${JFROG_CLI_LOG_LEVEL:-DEBUG}"
 export JFROG_CLI_LOG_TIMESTAMP="${JFROG_CLI_LOG_TIMESTAMP:-DATE_AND_TIME}"
 export NEXUS_REPOSITORIES_FILE="${NEXUS_REPOSITORIES_FILE:-repos.txt}"
 
-# RECONCILE_VIEWS is set after parsing --b4upload or --after-upload (see option parsing below).
+# Views and output scripts for phased reconciliation (jfrog-cli-plugin-compare)
+# Output names are numbered 01-09 so run order is obvious.
+RECONCILE_VIEWS=(
+    "reconcile_phase1_consolidate:01_to_consolidate.sh"
+    "properties_reconcile_phase1_consolidate:02_to_consolidate_props.sh"
+    "reconcile_download_stats:07_to_sync_download_stats.sh"
+    "properties_reconcile_phase2_sync:08_to_sync_props.sh"
+    "reconcile_folder_stats:09_to_sync_folder_stats_as_properties.sh"
+)
+
+    # "statistics_reconcile_phase1_consolidate:02_to_consolidate_stats.sh"
+    # "statistics_reconcile_phase2_sync:05_to_sync_stats.sh"
+    # "reconcile_phase2_sync_delayed:07_to_sync_delayed.sh"
+    # "properties_reconcile_phase2_sync_delayed:08_to_sync_delayed_props.sh"
+    # "reconcile_stats_actionable:09_to_sync_stats.sh"
+    # "reconcile_download_stats:10_to_sync_download_stats.sh"
+    # "reconcile_folder_stats:11_to_sync_folder_stats.sh"
 
 show_help() {
     cat << EOF
-Usage: $0 (--b4upload | --after-upload) [OPTIONS]
+Usage: $0 [OPTIONS]
 
 Compares artifacts (Nexus/Artifactory SH/Artifactory Cloud) and optionally collects
 stats/properties and generates phased reconciliation scripts (binaries, properties, statistics).
-
-Mode (required, one of):
-  --b4upload       Use reconciliation views for before-upload flow (sync, delayed, stats, folder props).
-  --after-upload   Use reconciliation views for after-upload flow (download stats, sync props, folder stats as properties).
 
 OPTIONS:
   --collect-stats-properties   Run 'jf compare list target --collect-stats --collect-properties'
@@ -78,23 +90,15 @@ RECONCILIATION:
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
 Order: compare first, then optional collect-stats/collect-properties, then optional reconcile scripts.
+Generated scripts are numbered 01-09 in run order. Phase 1 (01_, 02_) -> Phase 2 (03_, 04_) -> Phase 2b delayed (05_, 06_) -> statistics (07_, 08_, 09_). Run in numeric order.
 Requires: jf compare (jfrog-cli-plugin-compare), and jq for --reconcile.
 
 EOF
 }
 
 # Parse options
-RECONCILE_MODE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --b4upload)
-            RECONCILE_MODE="b4upload"
-            shift
-            ;;
-        --after-upload)
-            RECONCILE_MODE="after-upload"
-            shift
-            ;;
         --collect-stats-properties)
             COLLECT_STATS_PROPERTIES=1
             shift
@@ -118,36 +122,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Require mode (--b4upload or --after-upload)
-if [ -z "$RECONCILE_MODE" ]; then
-    echo "Error: Must specify --b4upload or --after-upload."
-    show_help
-    exit 1
-fi
-
-# Set RECONCILE_VIEWS based on mode
-if [ "$RECONCILE_MODE" == "b4upload" ]; then
-    RECONCILE_VIEWS=(
-        "reconcile_phase1_consolidate:01_to_consolidate.sh"
-        "properties_reconcile_phase1_consolidate:02_to_consolidate_props.sh"
-        "reconcile_phase2_sync:03_to_sync.sh"
-        "reconcile_phase2_sync_delayed:04_to_sync_delayed.sh"
-        "reconcile_stats_actionable:05_to_sync_stats.sh"
-        "properties_reconcile_phase2_sync_folders:06_to_sync_folder_props.sh"
-    )
-elif [ "$RECONCILE_MODE" == "after-upload" ]; then
-    RECONCILE_VIEWS=(
-        "reconcile_phase1_consolidate:01_to_consolidate.sh"
-        "properties_reconcile_phase1_consolidate:02_to_consolidate_props.sh"
-        "reconcile_download_stats:07_to_sync_download_stats.sh"
-        "properties_reconcile_phase2_sync:08_to_sync_props.sh"
-        "reconcile_folder_stats:09_to_sync_folder_stats_as_properties.sh"
-    )
-else
-    echo "Error: Invalid RECONCILE_MODE: $RECONCILE_MODE"
-    exit 1
-fi
 
 START_TIME=$(date +%s)
 
@@ -232,7 +206,7 @@ REPORT_FILE="${REPORT_FILE%.csv}-${TIMESTAMP}.csv"
 
 echo "=== Compare and Reconcile ==="
 echo "Scenario: $COMPARISON_SCENARIO | Discovery: $ARTIFACTORY_DISCOVERY_METHOD | Report: $REPORT_FILE"
-echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIES | Generate reconcile scripts: $RECONCILE"
+echo "Collect stats/properties: $COLLECT_STATS_PROPERTIES | Generate reconcile scripts: $RECONCILE"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -370,7 +344,7 @@ if [ "$RECONCILE" == "1" ]; then
     mkdir -p "$OUT_DIR"
     [ "$RECONCILE_TARGET_ONLY" == "1" ] && echo "Filtering: target-only (one-way sync to $TARGET_AUTHORITY)"
     [ -n "${TARGET_REPOS:-}" ] && echo "Filtering: only repos in TARGET_REPOS (e.g. CLOUD_ARTIFACTORY_REPOS)"
-    echo "=== Generating reconciliation scripts in $OUT_DIR (mode: $RECONCILE_MODE) ==="
+    echo "=== Generating reconciliation scripts in $OUT_DIR ==="
     # Build grep -e "/repo" args for repo filter when TARGET_REPOS is set (path must reference one of these repos)
     REPO_GREP_ARGS=()
     if [ -n "${TARGET_REPOS:-}" ]; then
