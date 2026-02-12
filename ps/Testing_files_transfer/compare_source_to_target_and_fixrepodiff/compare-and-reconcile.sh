@@ -68,6 +68,9 @@ ENVIRONMENT (same as compare-artifacts.sh):
   ARTIFACTORY_DISCOVERY_METHOD (default: artifactory_aql)
   SH_ARTIFACTORY_REPOS, CLOUD_ARTIFACTORY_REPOS  (comma-separated; optional)
   ARTIFACTORY_REPOS  (optional; used as target repos when set, else SH/CLOUD_ARTIFACTORY_REPOS per scenario)
+  When source and target repo names differ (e.g. sv-docker-local vs sv-docker-local-copy), set both
+  SH_ARTIFACTORY_REPOS and CLOUD_ARTIFACTORY_REPOS with the same number of repos (paired by order).
+  The script runs 'jf compare sync-add' for each pair. COMPARE_SYNC_TYPE (default: other) sets the sync type.
 
 RECONCILIATION:
   COLLECT_STATS_PROPERTIES=1   Same as --collect-stats-properties (only with artifactory_aql).
@@ -344,6 +347,35 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         fi
         echo ""
     fi
+fi
+
+# ----------------------------------------------------------------------------
+# Different source and target repo names: add explicit sync mappings (Case a)
+# When source and target repo names differ, Phase 2 reports need jf compare sync-add
+# per pair. See jfrog-cli-plugin-compare/docs/phased-reconciliation-guide.md
+# ----------------------------------------------------------------------------
+if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ] && [ -n "${SH_ARTIFACTORY_REPOS:-}" ] && [ -n "${CLOUD_ARTIFACTORY_REPOS:-}" ]; then
+    # Pair by index: first source repo with first target repo, etc.
+    IFS=',' read -ra SRC_REPOS <<< "$SH_ARTIFACTORY_REPOS"
+    IFS=',' read -ra TGT_REPOS <<< "$CLOUD_ARTIFACTORY_REPOS"
+    SRC_COUNT=${#SRC_REPOS[@]}
+    TGT_COUNT=${#TGT_REPOS[@]}
+    if [ "$SRC_COUNT" -ne "$TGT_COUNT" ]; then
+        echo "Error: SH_ARTIFACTORY_REPOS and CLOUD_ARTIFACTORY_REPOS must have the same number of comma-separated repos (got $SRC_COUNT and $TGT_COUNT)." >&2
+        exit 1
+    fi
+    echo "=== Adding explicit sync mappings (source repo -> target repo) ==="
+    SYNC_TYPE="${COMPARE_SYNC_TYPE:-other}"
+    for i in "${!SRC_REPOS[@]}"; do
+        src_r=$(echo "${SRC_REPOS[$i]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        tgt_r=$(echo "${TGT_REPOS[$i]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -z "$src_r" ] || [ -z "$tgt_r" ] && continue
+        # Only add explicit mapping when repo names differ
+        if [ "$src_r" != "$tgt_r" ]; then
+            _audit_run $COMMAND_NAME sync-add "$SOURCE_AUTHORITY" "$src_r" "$TARGET_AUTHORITY" "$tgt_r" "$SYNC_TYPE"
+        fi
+    done
+    echo ""
 fi
 
 # ----------------------------------------------------------------------------

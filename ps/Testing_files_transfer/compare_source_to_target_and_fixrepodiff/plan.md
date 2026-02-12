@@ -61,6 +61,29 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - The order of operations: compare (and optionally collect-stats/collect-properties) first, then generate reconciliation scripts.
   - **Run order for generated scripts:** Scripts are numbered 01–09 in run order. Phase 1 (01_, 02_) → Phase 2 (03_, 04_) → Phase 2b delayed (05_, 06_) → statistics (07_, 08_, 09_). State this explicitly in the README and in script help.
 
+### 1.5 One-shot sync script (QUICKSTART automation)
+
+- [x] **T12** Create a new **single script** that automates **Step 1 through Step 5** of [QUICKSTART.md](QUICKSTART.md) (i.e. from "Set environment variables" through "Run the after-upload reconciliation scripts"), so that one invocation runs the full sync workflow end-to-end without manual step execution. Scope:
+  - **Step 1:** Set (or accept) environment variables: scenario (e.g. Artifactory SH → Cloud), source/target URLs and authorities, `ARTIFACTORY_DISCOVERY_METHOD`, `RECONCILE_OUTPUT_DIR` for both b4-upload and after-upload output dirs, and optional repo filters (`SH_ARTIFACTORY_REPOS`, `CLOUD_ARTIFACTORY_REPOS`). The script may accept these as arguments, env vars, or a config file; design to be decided at implementation.
+  - **Step 2:** Run `compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only` with the b4-upload output dir.
+  - **Step 3:** Run the before-upload reconciliation scripts in order: optionally 01/02 if consolidation is needed; then 03 (sync binaries), optionally 04 (sync delayed), 05 (sync stats), 06 (sync folder props), using `runcommand_in_parallel_from_file.sh` with appropriate concurrency and log paths (e.g. `--log-success`, failure log per script).
+  - **Step 4:** Run `compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only` with the after-upload output dir (script must `cd` back to script dir or use absolute paths).
+  - **Step 5:** Run the after-upload reconciliation scripts in order: 07 (download stats), 08 (sync props), 09 (folder stats as properties), using `runcommand_in_parallel_from_file.sh` as in Step 3.
+  - The script must resolve its own directory so it can invoke `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly regardless of the user's current working directory when invoked.
+  - Document in plan and (when implemented) in README/QUICKSTART how to run this one-shot script and how it maps to the manual Steps 1–5. No code changes beyond adding this task until implementation.
+
+**Implemented:** Script [sync-target-from-source.sh](sync-target-from-source.sh) and [README-sync-target-from-source.md](README-sync-target-from-source.md). Step 1 is via env vars or `--config <file>`; output dirs default to `<script_dir>/b4_upload` and `<script_dir>/after_upload` (override with `RECONCILE_BASE_DIR`). Options: `--skip-consolidation`, `--skip-delayed`, `--max-parallel N`. Currently supports Case a (Artifactory SH → Cloud) only.
+
+### 1.6 Different source and target repo names (same or cross-instance)
+
+- [x] **T13** Support comparing repos with **different names** (e.g. source `sv-docker-local`, target `sv-docker-local-copy`) on the same or different Artifactory instance, per [jfrog-cli-plugin-compare/docs/phased-reconciliation-guide.md](../../../../jfrog-cli-plugin-compare/docs/phased-reconciliation-guide.md) section "Different source and target repo names". Implementation:
+  - **List both sides:** Ensure both source (SH) and target (Cloud) are listed with their respective `--repos=` when `SH_ARTIFACTORY_REPOS` and `CLOUD_ARTIFACTORY_REPOS` are set (Case a). Uncomment or restore the Artifactory SH and Cloud list steps so each side is crawled with its own repo list.
+  - **Sync-add after list:** After both sides are listed, when in Case a and both `SH_ARTIFACTORY_REPOS` and `CLOUD_ARTIFACTORY_REPOS` are set, run `jf compare sync-add <source_authority> <source_repo> <target_authority> <target_repo> other` for each pair. Pair by index (first source repo with first target repo). Require equal list lengths or document pairing. Optional: support `SYNC_REPO_PAIRS` env (e.g. `source1:target1,source2:target2`) for explicit mapping.
+  - **Placement:** Run sync-add after the collect-stats/properties block and before generating reconciliation scripts (and before CSV report if report depends on comparison state).
+  - **Documentation:** Document in script help and README that when source and target repo names differ, set both repo lists and the script will add explicit sync mappings; reference the phased-reconciliation-guide.
+
+**Implemented:** Restored SH and Cloud list steps (list with `--repos=` and optional `--collect-stats --aql-style=sha1`). After collect-stats block, when Case a and both repo lists set: parse comma-separated lists, require equal count, run `sync-add SOURCE_AUTHORITY src_repo TARGET_AUTHORITY tgt_repo SYNC_TYPE` for each pair. Sync type from `COMPARE_SYNC_TYPE` (default `other`). Help text updated.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

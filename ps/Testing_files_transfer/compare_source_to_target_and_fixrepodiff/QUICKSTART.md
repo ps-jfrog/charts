@@ -97,13 +97,13 @@ cd test_reconcile_target_only_b4_upload
 ../runcommand_in_parallel_from_file.sh --log-success ./03_to_sync.sh ./03_to_sync_out.txt 10
 ```
 
-**Sync delayed binaries (e.g. manifest files):**
+**Skip Sync delayed binaries (e.g. manifest files):**
 
 ```bash
 ../runcommand_in_parallel_from_file.sh --log-success ./04_to_sync_delayed.sh ./04_to_sync_delayed_out.txt 10
 ```
 
-You can skip `04_to_sync_delayed.sh` if you prefer: delayed manifest files are often created when you run the stats sync below.
+You can skip `04_to_sync_delayed.sh` : delayed manifest files are often created when you run the stats sync below.
 
 **Sync stats (file statistics); after this you typically see delayed manifest files in Docker repos:**
 
@@ -201,6 +201,19 @@ If sync completed successfully, pulls from the target should match what you had 
 |--------|--------|
 | **compare-and-reconcile.sh** | Compare source vs target and generate reconciliation scripts. Requires **--b4upload** or **--after-upload**. |
 | **runcommand_in_parallel_from_file.sh** | Run commands from a file in parallel; `--log-success` logs successful commands; args: `<command_file> <failure_log_file> <max_parallel>`. |
+| **sync-target-from-source.sh** | One-shot: run Steps 2–5 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09). Set env vars (Step 1) then run; see [README-sync-target-from-source.md](README-sync-target-from-source.md). |
+
+---
+
+## One-shot option
+
+To run the full sync without executing each step manually, set the required environment variables (Step 1) and then:
+
+```bash
+./sync-target-from-source.sh
+```
+
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`) and output directories.
 
 ---
 

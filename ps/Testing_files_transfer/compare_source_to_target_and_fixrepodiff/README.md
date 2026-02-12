@@ -111,6 +111,8 @@ export SH_ARTIFACTORY_REPOS="repo-a,repo-b"
 export CLOUD_ARTIFACTORY_REPOS="repo-a,repo-b"
 ```
 
+**Different source and target repo names (Case a):** When source and target repos have different names (e.g. source `sv-docker-local`, target `sv-docker-local-copy`), set both `SH_ARTIFACTORY_REPOS` and `CLOUD_ARTIFACTORY_REPOS` with the **same number** of comma-separated repos; they are paired by order (first source with first target, etc.). The script runs `jf compare sync-add` for each pair so Phase 2 reports and reconciliation scripts use the correct mapping. Optional: `COMPARE_SYNC_TYPE` (default `other`) sets the sync type. See [phased-reconciliation-guide.md](../../../../jfrog-cli-plugin-compare/docs/phased-reconciliation-guide.md) section "Different source and target repo names".
+
 Leave these unset to compare and reconcile **all** repositories.
 
 ### Step 3: Use AQL discovery for stats/properties and reconciliation
