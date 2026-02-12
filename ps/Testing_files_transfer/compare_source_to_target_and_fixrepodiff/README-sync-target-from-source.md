@@ -12,11 +12,13 @@ This script automates **Steps 2 through 5** of [QUICKSTART.md](QUICKSTART.md): i
 |-------------|-----------------|--------|
 | (you set env) | **Step 1** | Set COMPARE_*, SH_ARTIFACTORY_*, CLOUD_ARTIFACTORY_*, etc. (or use `--config`) |
 | Step 2 | **Step 2** | Run `compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only`; output in `b4_upload/` |
-| Step 3 | **Step 3** | Run before-upload scripts 01–06 (optionally skip 01/02; 04 is skipped by default, use `--run-delayed` to run it) via `runcommand_in_parallel_from_file.sh` |
+| Step 3 | **Step 3** | Run before-upload scripts 01–06 (optionally skip 01/02; 04 is skipped by default, use `--run-delayed` to run it) via `runcommand_in_parallel_from_file.sh`. **If source and target use the same Artifactory URL**, for script 03 the script generates `03_to_sync_using_copy.sh` from `03_to_sync.sh` with [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) and runs that (jf rt cp) instead of `03_to_sync.sh` (dl+upload). |
 | Step 4 | **Step 4** | Run `compare-and-reconcile.sh --after-upload ...`; output in `after_upload/` |
 | Step 5 | **Step 5** | Run after-upload scripts 07, 08, 09 via `runcommand_in_parallel_from_file.sh` |
 
 The script resolves its own directory so it can call `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly no matter where you run it from.
+
+**Same Artifactory URL (source and target on one instance):** When `SH_ARTIFACTORY_BASE_URL` and `CLOUD_ARTIFACTORY_BASE_URL` are equal (e.g. app2 → app3 on the same host), Step 3 does **not** run `03_to_sync.sh` (download from source then upload to target). Instead it runs [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) to generate `03_to_sync_using_copy.sh` from `03_to_sync.sh`, then runs `03_to_sync_using_copy.sh`, which uses `jf rt cp` so artifacts are copied server-side. If the converter script is missing, it falls back to running `03_to_sync.sh`. See [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md).
 
 ---
 

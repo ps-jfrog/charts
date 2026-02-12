@@ -135,6 +135,7 @@ mkdir -p "$B4_DIR" "$AFTER_DIR"
 
 COMPARE_SCRIPT="$SCRIPT_DIR/compare-and-reconcile.sh"
 RUNNER="$SCRIPT_DIR/runcommand_in_parallel_from_file.sh"
+CONVERTER="$SCRIPT_DIR/convert_dl_upload_to_rt_cp.sh"
 if [[ ! -f "$COMPARE_SCRIPT" ]] || [[ ! -r "$COMPARE_SCRIPT" ]]; then
   echo "Error: compare-and-reconcile.sh not found or not readable: $COMPARE_SCRIPT" >&2
   exit 1
@@ -143,6 +144,12 @@ if [[ ! -f "$RUNNER" ]] || [[ ! -r "$RUNNER" ]]; then
   echo "Error: runcommand_in_parallel_from_file.sh not found or not readable: $RUNNER" >&2
   exit 1
 fi
+
+# Same Artifactory instance (source and target URLs match) → use jf rt cp instead of dl+upload for 03
+SH_URL_NORM="${SH_ARTIFACTORY_BASE_URL%/}"
+CLOUD_URL_NORM="${CLOUD_ARTIFACTORY_BASE_URL%/}"
+SAME_ARTIFACTORY_URL=0
+[[ "$SH_URL_NORM" == "$CLOUD_URL_NORM" ]] && SAME_ARTIFACTORY_URL=1
 
 run_script_if_exists() {
   local dir="$1"
@@ -167,7 +174,22 @@ if [[ "$SKIP_CONSOLIDATION" -eq 0 ]]; then
   run_script_if_exists "$B4_DIR" "01_to_consolidate.sh"
   run_script_if_exists "$B4_DIR" "02_to_consolidate_props.sh"
 fi
-run_script_if_exists "$B4_DIR" "03_to_sync.sh"
+if [[ "$SAME_ARTIFACTORY_URL" -eq 1 ]]; then
+  if [[ -f "$B4_DIR/03_to_sync.sh" ]]; then
+    if [[ -f "$CONVERTER" ]] && [[ -r "$CONVERTER" ]]; then
+      echo "  Same Artifactory URL: generating 03_to_sync_using_copy.sh (jf rt cp) from 03_to_sync.sh ..."
+      bash "$CONVERTER" "$B4_DIR/03_to_sync.sh"
+      run_script_if_exists "$B4_DIR" "03_to_sync_using_copy.sh"
+    else
+      echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; running 03_to_sync.sh" >&2
+      run_script_if_exists "$B4_DIR" "03_to_sync.sh"
+    fi
+  else
+    echo "  Skipping 03_to_sync.sh (not generated)."
+  fi
+else
+  run_script_if_exists "$B4_DIR" "03_to_sync.sh"
+fi
 if [[ "$SKIP_DELAYED" -eq 0 ]]; then
   run_script_if_exists "$B4_DIR" "04_to_sync_delayed.sh"
 fi
