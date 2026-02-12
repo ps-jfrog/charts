@@ -104,6 +104,21 @@ Then scripts and logs are under `/path/to/my/project/b4_upload/` and `/path/to/m
 
 ---
 
+## Command audit logs
+
+Each run of **compare-and-reconcile.sh** writes a **command-audit log** (e.g. `compare-and-reconcile-command-audit-YYYYMMDD-HHMMSS.log`) listing every `jf compare` command executed: init, authority-add, credentials-add, list (per side), optional sync-add (when source and target repo names differ), and report. Use these logs to verify the sequence and to replay or debug.
+
+**Example audit log directories** in this repo (for reference only; paths and timestamps will differ when you run locally):
+
+| Directory | Scenario | What the audit shows |
+|-----------|----------|----------------------|
+| **compare-and-reconcile-command-audit-diff_jpds_same_repo_names/** | Different Artifactory instances (app1 → app2), **same repo names** on both sides | init, authority-add and list for app1 and app2 with the same `--repos=...`, then report commands. No `sync-add` because repo names match. |
+| **compare-and-reconcile-command-audit-same_jpd_diff_repo_names/** | Same Artifactory instance (app2 → app3), **different repo names** (e.g. `sv-docker-local` → `sv-docker-local-copy`) | init, authority-add, list for each side with their own repo lists, then **sync-add** for each source→target repo pair, then report commands. |
+
+When using **sync-target-from-source.sh**, the before-upload run writes its audit log under your output base (e.g. `b4_upload/` or `RECONCILE_BASE_DIR/b4_upload/`); the after-upload run writes a separate audit log (e.g. under `after_upload/`). Log file names are printed at the start of each compare-and-reconcile run.
+
+---
+
 ## After the script finishes
 
 - Inspect failure logs in `b4_upload/*_out.txt` and `after_upload/*_out.txt` for any failed commands.

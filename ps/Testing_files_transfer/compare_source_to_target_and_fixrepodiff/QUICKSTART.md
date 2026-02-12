@@ -195,6 +195,19 @@ If sync completed successfully, pulls from the target should match what you had 
 
 ---
 
+## Command audit logs
+
+**compare-and-reconcile.sh** writes a **command-audit log** (e.g. `compare-and-reconcile-command-audit-YYYYMMDD-HHMMSS.log`) for each run, listing every `jf compare` command it executes: init, authority-add, credentials-add, list (per side), optional sync-add (when source and target repo names differ), and report. Use these logs to verify the sequence or to debug.
+
+**Example audit log directories** in this repo (reference only):
+
+| Directory | Scenario | What the audit shows |
+|-----------|----------|----------------------|
+| **compare-and-reconcile-command-audit-diff_jpds_same_repo_names/** | Different instances (app1 → app2), **same repo names** | init, authority-add, list for app1 and app2 with the same `--repos=...`, then report. No `sync-add`. |
+| **compare-and-reconcile-command-audit-same_jpd_diff_repo_names/** | Same instance (app2 → app3), **different repo names** | init, authority-add, list per side with their own repo lists, then **sync-add** for each source→target repo pair, then report. |
+
+---
+
 ## Script reference
 
 | Script | Purpose |
