@@ -9,8 +9,8 @@ export CLOUD_ARTIFACTORY_AUTHORITY="app2"
 export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
 
 # Optional: limit to specific repositories
-export SH_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
-export CLOUD_ARTIFACTORY_REPOS="sv-docker-local-copy,example-repo-local-copy"
+export SH_ARTIFACTORY_REPOS="sv-docker-local"
+export CLOUD_ARTIFACTORY_REPOS="__infra_local_docker"
 
 # Optional: where to put b4_upload/ and after_upload/ (default: script directory)
-export RECONCILE_BASE_DIR="/Users/sureshv/From_Customer/smartsheet/test_a_repo_copy/test4"
+export RECONCILE_BASE_DIR="/Users/sureshv/From_Customer/smartsheet/test_a_repo_copy/test6_aql-style-sha1"

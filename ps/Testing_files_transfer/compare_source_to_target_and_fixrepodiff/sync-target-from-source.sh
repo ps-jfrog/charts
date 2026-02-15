@@ -29,6 +29,7 @@ MAX_PARALLEL="${MAX_PARALLEL:-10}"
 SKIP_CONSOLIDATION=0
 SKIP_DELAYED=1
 CONFIG_FILE=""
+AQL_STYLE=""
 
 show_help() {
   cat << EOF
@@ -45,6 +46,8 @@ OPTIONS:
   --skip-consolidation  Do not run 01_to_consolidate.sh or 02_to_consolidate_props.sh.
   --run-delayed         Run 04_to_sync_delayed.sh (default: skip it).
   --max-parallel <N>    Max concurrent commands when running reconciliation scripts (default: 10).
+  --aql-style <style>   AQL crawl style for 'jf compare list' (e.g. sha1-prefix). Passed to
+                        compare-and-reconcile.sh. Also settable via env COMPARE_AQL_STYLE.
   -h, --help            Show this help.
 
 ENVIRONMENT (Step 1 – set these or use --config):
@@ -87,6 +90,11 @@ while [[ $# -gt 0 ]]; do
       MAX_PARALLEL="$2"
       shift 2
       ;;
+    --aql-style)
+      [[ $# -lt 2 ]] && { echo "Error: --aql-style requires a value (e.g. sha1-prefix)." >&2; exit 1; }
+      AQL_STYLE="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1" >&2
       show_help
@@ -113,6 +121,9 @@ if [[ -n "$CONFIG_FILE" ]]; then
   set -u
 fi
 
+# AQL style: CLI flag overrides env; env from config is also respected
+[[ -n "$AQL_STYLE" ]] && export COMPARE_AQL_STYLE="$AQL_STYLE"
+
 # Output dirs: respect RECONCILE_BASE_DIR from config or environment
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"
 B4_DIR="$RECONCILE_BASE_DIR/b4_upload"
@@ -136,6 +147,7 @@ mkdir -p "$B4_DIR" "$AFTER_DIR"
 COMPARE_SCRIPT="$SCRIPT_DIR/compare-and-reconcile.sh"
 RUNNER="$SCRIPT_DIR/runcommand_in_parallel_from_file.sh"
 CONVERTER="$SCRIPT_DIR/convert_dl_upload_to_rt_cp.sh"
+GROUPER="$SCRIPT_DIR/group_sync_by_sha1.sh"
 if [[ ! -f "$COMPARE_SCRIPT" ]] || [[ ! -r "$COMPARE_SCRIPT" ]]; then
   echo "Error: compare-and-reconcile.sh not found or not readable: $COMPARE_SCRIPT" >&2
   exit 1
@@ -163,6 +175,27 @@ run_script_if_exists() {
   fi
 }
 
+# Group a dl+upload script by SHA1 to eliminate duplicate downloads, then run the grouped version.
+# Falls back to running the original script if the grouper is not available.
+group_and_run_sync() {
+  local dir="$1"
+  local name="$2"
+  if [[ ! -f "$dir/$name" ]]; then
+    echo "  Skipping $name (not generated)."
+    return
+  fi
+  local base="${name%.sh}"
+  local grouped="${base}_grouped.sh"
+  if [[ -f "$GROUPER" ]] && [[ -r "$GROUPER" ]]; then
+    echo "  Grouping $name by SHA1 to reduce duplicate downloads ..."
+    bash "$GROUPER" "$dir/$name"
+    run_script_if_exists "$dir" "$grouped"
+  else
+    echo "  group_sync_by_sha1.sh not found; running $name without grouping" >&2
+    run_script_if_exists "$dir" "$name"
+  fi
+}
+
 # Step 2: Compare and reconcile (before-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports are created there
 echo "=== Step 2: Compare and reconcile (before-upload) ==="
 export RECONCILE_OUTPUT_DIR="$B4_DIR"
@@ -175,23 +208,42 @@ if [[ "$SKIP_CONSOLIDATION" -eq 0 ]]; then
   run_script_if_exists "$B4_DIR" "02_to_consolidate_props.sh"
 fi
 if [[ "$SAME_ARTIFACTORY_URL" -eq 1 ]]; then
+  # Same Artifactory: use jf rt cp (server-side copy, no temp files)
   if [[ -f "$B4_DIR/03_to_sync.sh" ]]; then
     if [[ -f "$CONVERTER" ]] && [[ -r "$CONVERTER" ]]; then
       echo "  Same Artifactory URL: generating 03_to_sync_using_copy.sh (jf rt cp) from 03_to_sync.sh ..."
       bash "$CONVERTER" "$B4_DIR/03_to_sync.sh"
       run_script_if_exists "$B4_DIR" "03_to_sync_using_copy.sh"
     else
-      echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; running 03_to_sync.sh" >&2
-      run_script_if_exists "$B4_DIR" "03_to_sync.sh"
+      echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; falling back to grouped dl+upload" >&2
+      group_and_run_sync "$B4_DIR" "03_to_sync.sh"
     fi
   else
     echo "  Skipping 03_to_sync.sh (not generated)."
   fi
 else
-  run_script_if_exists "$B4_DIR" "03_to_sync.sh"
+  # Different Artifactory URLs: group by SHA1 to avoid duplicate downloads, then dl+upload
+  group_and_run_sync "$B4_DIR" "03_to_sync.sh"
 fi
 if [[ "$SKIP_DELAYED" -eq 0 ]]; then
-  run_script_if_exists "$B4_DIR" "04_to_sync_delayed.sh"
+  if [[ "$SAME_ARTIFACTORY_URL" -eq 1 ]]; then
+    # Same Artifactory: use jf rt cp (server-side copy, no temp files)
+    if [[ -f "$B4_DIR/04_to_sync_delayed.sh" ]]; then
+      if [[ -f "$CONVERTER" ]] && [[ -r "$CONVERTER" ]]; then
+        echo "  Same Artifactory URL: generating 04_to_sync_delayed_using_copy.sh (jf rt cp) from 04_to_sync_delayed.sh ..."
+        bash "$CONVERTER" "$B4_DIR/04_to_sync_delayed.sh"
+        run_script_if_exists "$B4_DIR" "04_to_sync_delayed_using_copy.sh"
+      else
+        echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; falling back to grouped dl+upload" >&2
+        group_and_run_sync "$B4_DIR" "04_to_sync_delayed.sh"
+      fi
+    else
+      echo "  Skipping 04_to_sync_delayed.sh (not generated)."
+    fi
+  else
+    # Different Artifactory URLs: group by SHA1 to avoid duplicate downloads, then dl+upload
+    group_and_run_sync "$B4_DIR" "04_to_sync_delayed.sh"
+  fi
 fi
 run_script_if_exists "$B4_DIR" "05_to_sync_stats.sh"
 run_script_if_exists "$B4_DIR" "06_to_sync_folder_props.sh"

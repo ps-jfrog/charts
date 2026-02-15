@@ -118,8 +118,7 @@ Pipe from another script:
 ## Behavior common to both scripts
 
 - **Concurrency:** At most `max_parallel` commands run at once; the script waits when the limit is reached.
-- **Temp isolation:** Each command runs with `TMPDIR`, `TEMP`, and `TMP` set to a new `mktemp -d` directory, which is removed after the command finishes.
-- **Cleanup of `/tmp` paths:** After each command, the script looks for paths like `/tmp/...` in the command string (e.g. `"/tmp/abc123"` or `/tmp/abc123`) and runs `rm -rf` on them if they exist. This cleans up download targets used by `jf rt dl` / `jf rt u` style commands.
+- **Temp isolation (per-task /tmp rewrite):** Each command runs with `TMPDIR`, `TEMP`, and `TMP` set to a new `mktemp -d` directory. Before execution, any `/tmp/` paths in the command are **rewritten** to the per-task temp dir so parallel tasks downloading the same SHA1 don't collide or delete each other's files. The per-task temp dir is removed after the command finishes, cleaning up all downloaded files automatically.
 - **Failure log:** For each failed command, the script appends the command line and the command’s stdout/stderr to the failure log file.
 
 ---

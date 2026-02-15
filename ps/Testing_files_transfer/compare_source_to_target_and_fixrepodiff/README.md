@@ -58,12 +58,14 @@ Compare artifacts between Nexus / Artifactory SH / Artifactory Cloud, optionally
 | `--collect-stats-properties` | After compare, run `jf compare list` with `--collect-stats --collect-properties` on the target. In Case a (SH→Cloud), also runs `jf compare list` with `--collect-properties` on the source (SH) so property sync views use source=SH, target=Cloud and 04/06 scripts can be non-empty. **Only valid when `ARTIFACTORY_DISCOVERY_METHOD=artifactory_aql`.** |
 | `--reconcile` | After compare (and optional collect), generate the phased reconciliation scripts (`01_to_consolidate.sh` … `09_to_sync_folder_stats.sh`) in the current directory (or `RECONCILE_OUTPUT_DIR`). Scripts are numbered in run order. |
 | `--target-only` | With `--reconcile`: keep only commands that update the **target** instance (e.g. app2). One-way sync so that target matches source; commands that would update the source are dropped. When `CLOUD_ARTIFACTORY_REPOS` or `ARTIFACTORY_REPOS` is set, generated scripts are also restricted to those repos only. |
+| `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). If not set, uses the default repo-based crawl. Useful for large repos. Also settable via env `COMPARE_AQL_STYLE`. |
 | `-h`, `--help` | Show help. |
 
 **Environment:**  
 `COLLECT_STATS_PROPERTIES=1` and `RECONCILE=1` are equivalent to the flags above.  
 `RECONCILE_TARGET_ONLY=1` is equivalent to `--target-only`.  
-`RECONCILE_OUTPUT_DIR=<dir>` sets where `to_*.sh` are written (default: current directory).
+`RECONCILE_OUTPUT_DIR=<dir>` sets where `to_*.sh` are written (default: current directory).  
+`COMPARE_AQL_STYLE=<style>` is equivalent to `--aql-style` (e.g. `sha1-prefix`).
 
 ## Scenarios and repository scope
 

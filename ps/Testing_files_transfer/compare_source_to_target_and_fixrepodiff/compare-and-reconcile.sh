@@ -59,6 +59,8 @@ OPTIONS:
                                (Phase 1, Phase 2, Phase 2b delayed, stats) from jf compare report.
   --target-only                With --reconcile: keep only commands that update the target instance (e.g. app2).
                                One-way sync: make target match source. Drops commands that update the source.
+  --aql-style <style>          AQL crawl style for 'jf compare list' (e.g. sha1-prefix). If not set, uses the
+                               default repo-based crawl. Also settable via env COMPARE_AQL_STYLE.
   -h, --help                   Show this help.
 
 ENVIRONMENT (same as compare-artifacts.sh):
@@ -77,6 +79,7 @@ RECONCILIATION:
   RECONCILE=1                  Same as --reconcile.
   RECONCILE_TARGET_ONLY=1      Same as --target-only (filter scripts so only target-side commands remain).
   RECONCILE_OUTPUT_DIR=<dir>   Where to write to_*.sh scripts (default: current directory).
+  COMPARE_AQL_STYLE=<style>    Same as --aql-style (e.g. sha1-prefix). Appended to all 'jf compare list' calls.
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
@@ -88,6 +91,7 @@ EOF
 
 # Parse options
 RECONCILE_MODE=""
+AQL_STYLE="${COMPARE_AQL_STYLE:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --b4upload)
@@ -110,6 +114,11 @@ while [[ $# -gt 0 ]]; do
             RECONCILE_TARGET_ONLY=1
             shift
             ;;
+        --aql-style)
+            [[ $# -lt 2 ]] && { echo "Error: --aql-style requires a value (e.g. sha1-prefix)." >&2; exit 1; }
+            AQL_STYLE="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -121,6 +130,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Build AQL style flag (empty when not set → default repo-based crawl)
+AQL_STYLE_FLAG=""
+[[ -n "$AQL_STYLE" ]] && AQL_STYLE_FLAG="--aql-style=$AQL_STYLE"
 
 # Require mode (--b4upload or --after-upload)
 if [ -z "$RECONCILE_MODE" ]; then
@@ -236,6 +249,7 @@ REPORT_FILE="${REPORT_FILE%.csv}-${TIMESTAMP}.csv"
 echo "=== Compare and Reconcile ==="
 echo "Scenario: $COMPARISON_SCENARIO | Discovery: $ARTIFACTORY_DISCOVERY_METHOD | Report: $REPORT_FILE"
 echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIES | Generate reconcile scripts: $RECONCILE"
+[ -n "$AQL_STYLE" ] && echo "AQL style: $AQL_STYLE"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -333,17 +347,17 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
             echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
             if [ -n "${SH_LIST_REPOS:-}" ]; then
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS"
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG
             else
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG
             fi
             echo ""
         fi
         echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
         if [ -n "${TARGET_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS"
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG
         else
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG
         fi
         echo ""
     fi

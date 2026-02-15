@@ -84,6 +84,16 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 **Implemented:** Restored SH and Cloud list steps (list with `--repos=` and optional `--collect-stats --aql-style=sha1`). After collect-stats block, when Case a and both repo lists set: parse comma-separated lists, require equal count, run `sync-add SOURCE_AUTHORITY src_repo TARGET_AUTHORITY tgt_repo SYNC_TYPE` for each pair. Sync type from `COMPARE_SYNC_TYPE` (default `other`). Help text updated.
 
+### 1.7 AQL style for list commands (sha1-prefix)
+
+- [x] **T14** Support `--aql-style <style>` (e.g. `sha1-prefix`) on `jf compare list` commands for efficient crawling of large repos. Implementation:
+  - **compare-and-reconcile.sh:** Accept `--aql-style <style>` CLI option; also read from env `COMPARE_AQL_STYLE`. Build `AQL_STYLE_FLAG` and append to all active `jf compare list` calls (collect-stats-properties block). If not set, no flag is passed (default repo-based style).
+  - **sync-target-from-source.sh:** Accept `--aql-style <style>` CLI option; pass through to `compare-and-reconcile.sh` via env `COMPARE_AQL_STYLE` or CLI arg.
+  - **Config env files:** Optionally set `COMPARE_AQL_STYLE="sha1-prefix"`.
+  - **Documentation:** Update help text, README, and QUICKSTART with `--aql-style` option and `COMPARE_AQL_STYLE` env var.
+
+**Implemented:** CLI `--aql-style <style>` on both scripts; env `COMPARE_AQL_STYLE`; appended `$AQL_STYLE_FLAG` to all 4 active list calls in compare-and-reconcile.sh; help text updated in both scripts.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

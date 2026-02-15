@@ -3,13 +3,13 @@ jf compare authority-add app2 http://35.237.191.14/artifactory/
 jf compare credentials-add app2 --cli-profile=app2 --discovery=artifactory_aql
 jf compare authority-add app3 http://35.237.191.14/artifactory/
 jf compare credentials-add app3 --cli-profile=app3 --discovery=artifactory_aql
-jf compare list app2 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local
-jf compare list app3 --collect-stats --collect-properties --repos=sv-docker-local-copy,example-repo-local-copy
+jf compare list app2 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local --aql-style=sha1-prefix
+jf compare list app3 --collect-stats --collect-properties --repos=sv-docker-local-copy,example-repo-local-copy --aql-style=sha1-prefix
 jf compare sync-add app2 sv-docker-local app3 sv-docker-local-copy other
 jf compare sync-add app2 example-repo-local app3 example-repo-local-copy other
-jf compare report --jsonl reconcile_phase1_consolidate
-jf compare report --jsonl properties_reconcile_phase1_consolidate
-jf compare report --jsonl reconcile_phase2_sync
-jf compare report --jsonl reconcile_phase2_sync_delayed
-jf compare report --jsonl reconcile_stats_actionable
-jf compare report --jsonl properties_reconcile_phase2_sync_folders
+jf compare report --jsonl reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 01_to_consolidate.sh
+jf compare report --jsonl properties_reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 02_to_consolidate_props.sh
+jf compare report --jsonl reconcile_phase2_sync | jq -r '.cmd' | sort -u > 03_to_sync.sh
+jf compare report --jsonl reconcile_phase2_sync_delayed | jq -r '.cmd' | sort -u > 04_to_sync_delayed.txt
+jf compare report --jsonl reconcile_stats_actionable | jq -r '.cmd' | sort -u > 05_to_sync_stats.sh
+jf compare report --jsonl properties_reconcile_phase2_sync_folders | jq -r '.cmd' | sort -u > 06_to_sync_folder_props.sh

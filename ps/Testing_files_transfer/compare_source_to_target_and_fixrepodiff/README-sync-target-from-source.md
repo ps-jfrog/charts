@@ -18,7 +18,9 @@ This script automates **Steps 2 through 5** of [QUICKSTART.md](QUICKSTART.md): i
 
 The script resolves its own directory so it can call `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly no matter where you run it from.
 
-**Same Artifactory URL (source and target on one instance):** When `SH_ARTIFACTORY_BASE_URL` and `CLOUD_ARTIFACTORY_BASE_URL` are equal (e.g. app2 → app3 on the same host), Step 3 does **not** run `03_to_sync.sh` (download from source then upload to target). Instead it runs [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) to generate `03_to_sync_using_copy.sh` from `03_to_sync.sh`, then runs `03_to_sync_using_copy.sh`, which uses `jf rt cp` so artifacts are copied server-side. If the converter script is missing, it falls back to running `03_to_sync.sh`. See [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md).
+**Same Artifactory URL (source and target on one instance):** When `SH_ARTIFACTORY_BASE_URL` and `CLOUD_ARTIFACTORY_BASE_URL` are equal (e.g. app2 → app3 on the same host), Step 3 does **not** run `03_to_sync.sh` (download from source then upload to target). Instead it runs [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) to generate `03_to_sync_using_copy.sh` from `03_to_sync.sh`, then runs `03_to_sync_using_copy.sh`, which uses `jf rt cp` so artifacts are copied server-side. If the converter script is missing, it falls back to grouped dl+upload (see below). See [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md).
+
+**Different Artifactory URLs (SHA1 deduplication):** When source and target are on different instances, Step 3 groups `03_to_sync.sh` by SHA1 via [group_sync_by_sha1.sh](group_sync_by_sha1.sh) before running. Docker repos often share layers across tags, so the same blob may appear in many lines. Grouping downloads each unique SHA1 **once** and uploads it to all destinations, then cleans up — eliminating redundant downloads (typically 60–80% reduction) and preventing parallel-task race conditions on shared `/tmp` files. See [README-group_sync_by_sha1.md](README-group_sync_by_sha1.md).
 
 ---
 
@@ -84,6 +86,7 @@ Copy one as a template, edit URLs, authorities, and repo lists, then run with `-
 | `--skip-consolidation` | Do not run `01_to_consolidate.sh` or `02_to_consolidate_props.sh`. |
 | `--run-delayed` | Run `04_to_sync_delayed.sh`. By default it is skipped (delayed manifests are often created by the stats sync). |
 | `--max-parallel <N>` | Max concurrent commands when running reconciliation scripts (default: 10). |
+| `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_STYLE`. |
 | `-h`, `--help` | Show usage and exit. |
 
 ---

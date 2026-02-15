@@ -92,8 +92,15 @@ execute_command() {
   local percent=$(( task_index * 100 / total ))
   local task_tmpdir
   task_tmpdir=$(mktemp -d)
+
+  # Isolate /tmp paths: rewrite /tmp/ references in the command to the per-task temp dir
+  # so parallel tasks downloading the same SHA1 don't collide or delete each other's files.
+  # The original command is kept for logging; the rewritten one is executed.
+  local exec_command
+  exec_command=$(echo "$command" | sed "s|/tmp/|${task_tmpdir}/|g")
+
   local output
-  output="$(TMPDIR="$task_tmpdir" TEMP="$task_tmpdir" TMP="$task_tmpdir" $SHELL -c "$command" 2>&1)"
+  output="$(TMPDIR="$task_tmpdir" TEMP="$task_tmpdir" TMP="$task_tmpdir" $SHELL -c "$exec_command" 2>&1)"
   local exit_code=$?
 
   if [ "$exit_code" -eq 0 ]; then
@@ -107,13 +114,8 @@ execute_command() {
     echo "$output" >> "$log_file"
   fi
 
-  # Remove per-task temp dir (where tools respecting TMPDIR/TEMP/TMP write downloads)
+  # Remove per-task temp dir (contains all downloaded files for this task)
   rm -rf "$task_tmpdir"
-
-  # Delete any /tmp/ path explicitly mentioned in the command (e.g. jf rt dl ... /tmp/xxx or "/tmp/xxx")
-  echo "$command" | grep -oE '/tmp/[^ "]+' | sort -u | while IFS= read -r path; do
-    [ -n "$path" ] && [ -e "$path" ] && rm -rf "$path"
-  done
 }
 
 # Read commands from file (trim, skip empty); store in array to get total
