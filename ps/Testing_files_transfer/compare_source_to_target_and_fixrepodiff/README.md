@@ -31,32 +31,29 @@ Compare artifacts between Nexus / Artifactory SH / Artifactory Cloud, optionally
    export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
    ./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
    ```
-3. Run Phase 1, then Phase 2 (binaries: sync + delayed):
+3. Run **before-upload** compare, then run scripts 01–06 (see [QUICKSTART.md](QUICKSTART.md) for full steps):
    ```bash
-   ./01_to_consolidate.sh
-   ./02_to_consolidate_props.sh
+   ./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
+   # Then run 01–02 if consolidation needed; then 03, 04 (optional), 05, 06
    ./03_to_sync.sh             # binaries: sync to target
-   ./05_to_sync_delayed.sh     # delayed binaries
+   ./04_to_sync_delayed.sh     # optional: delayed binaries (e.g. manifest.json)
+   ./05_to_sync_stats.sh       # file stats (checksum deploy)
+   ./06_to_sync_folder_props.sh
    ```
-4. **Rerun compare** so Phase 2b and Statistics scripts (04, 06–09) are regenerated from the updated target state:
+4. Run **after-upload** compare, then run scripts 07–09:
    ```bash
-   ./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
-   ```
-5. Run Phase 2b (properties), then Statistics (07–09):
-   ```bash
-   ./04_to_sync_props.sh       # properties: sync to target
-   ./06_to_sync_delayed_props.sh   # delayed properties
-   ./07_to_sync_stats.sh
-   ./08_to_sync_download_stats.sh
-   ./09_to_sync_folder_stats.sh
+   ./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
+   ./07_to_sync_download_stats.sh
+   ./08_to_sync_props.sh
+   ./09_to_sync_folder_stats_as_properties.sh
    ```
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `--collect-stats-properties` | After compare, run `jf compare list` with `--collect-stats --collect-properties` on the target. In Case a (SH→Cloud), also runs `jf compare list` with `--collect-properties` on the source (SH) so property sync views use source=SH, target=Cloud and 04/06 scripts can be non-empty. **Only valid when `ARTIFACTORY_DISCOVERY_METHOD=artifactory_aql`.** |
-| `--reconcile` | After compare (and optional collect), generate the phased reconciliation scripts (`01_to_consolidate.sh` … `09_to_sync_folder_stats.sh`) in the current directory (or `RECONCILE_OUTPUT_DIR`). Scripts are numbered in run order. |
+| `--collect-stats-properties` | After compare, run `jf compare list` with `--collect-stats --collect-properties` on the target. In Case a (SH→Cloud), also runs `jf compare list` with `--collect-properties` on the source (SH) so property sync views use source=SH, target=Cloud and scripts 06/08 can be non-empty. **Only valid when `ARTIFACTORY_DISCOVERY_METHOD=artifactory_aql`.** |
+| `--reconcile` | After compare (and optional collect), generate the phased reconciliation scripts (`01_to_consolidate.sh` … `09_to_sync_folder_stats_as_properties.sh`) in the current directory (or `RECONCILE_OUTPUT_DIR`). Scripts are numbered in run order. **Before-upload** (`--b4upload`): 01–06. **After-upload** (`--after-upload`): 07–09 (and 01–02 for consistency). |
 | `--target-only` | With `--reconcile`: keep only commands that update the **target** instance (e.g. app2). One-way sync so that target matches source; commands that would update the source are dropped. When `CLOUD_ARTIFACTORY_REPOS` or `ARTIFACTORY_REPOS` is set, generated scripts are also restricted to those repos only. |
 | `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). If not set, uses the default repo-based crawl. Useful for large repos. Also settable via env `COMPARE_AQL_STYLE`. |
 | `-h`, `--help` | Show help. |
@@ -129,76 +126,84 @@ Use `artifactory_filelist` only if you need a fast compare for binaries and do *
 
 ### Step 4: Run compare and generate reconciliation scripts
 
-Run the script with **collect-stats/properties** and **reconcile** so that:
+Run the script with **`--b4upload`** or **`--after-upload`**, plus **collect-stats/properties** and **reconcile**:
 
 1. Source and target are crawled and compared (binaries).
 2. Stats and properties are collected on the **target** (required for properties and statistics reconciliation).
-3. All phased reconciliation scripts are generated.
+3. The corresponding set of reconciliation scripts is generated (01–06 for before-upload, 07–09 for after-upload).
+
+**Before-upload** (sync binaries, stats, folder props):
 
 ```bash
-./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
+./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
+```
+
+**After-upload** (download stats, properties, folder stats as properties) — run after binaries are on the target:
+
+```bash
+./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
 ```
 
 Outputs:
 
 - **Report:** `report-<scenario>-<timestamp>.csv` (mismatches from `comparison.db`).
-- **Scripts** (in current directory or `RECONCILE_OUTPUT_DIR`), numbered in run order:
-  - `01_to_consolidate.sh` — Phase 1: consolidate abnormal repos to normalized repos (same instance).
-  - `02_to_consolidate_props.sh` — Phase 1: properties consolidation.
-  - `03_to_sync.sh` — Phase 2: sync normalized repos to target instance (binaries, non-delayed only).
-  - `04_to_sync_props.sh` — Phase 2: properties sync.
-  - `05_to_sync_delayed.sh` — Phase 2b: sync delayed artifacts (e.g. list.manifest.json, manifest.json) after regular binaries.
-  - `06_to_sync_delayed_props.sh` — Phase 2b: properties sync for delayed artifacts.
-  - `07_to_sync_stats.sh` — File statistics (X-Artifactory headers / checksum deploy); excludes download_count-only.
-  - `08_to_sync_download_stats.sh` — Download stats (downloadCount, lastDownloaded, lastDownloadedBy) via `:statistics` endpoint.
-  - `09_to_sync_folder_stats.sh` — Folder statistics via sync.* custom properties.
+- **Scripts** (in current directory or `RECONCILE_OUTPUT_DIR`), numbered in run order. You must use **`--b4upload`** or **`--after-upload`** so the correct set is generated; see [QUICKSTART.md](QUICKSTART.md).
 
-**Flow:** Run 01–02, then Phase 2 (03, 05). **Rerun** `./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only` so that 04, 06–09 are regenerated; then run Phase 2b (04, 06) and Statistics (07–09).
+  **Before-upload** (`--b4upload`): 01–06  
+  - `01_to_consolidate.sh` — Phase 1: consolidate abnormal repos to normalized repos (same instance).  
+  - `02_to_consolidate_props.sh` — Phase 1: properties consolidation.  
+  - `03_to_sync.sh` — Phase 2: sync binaries to target (non-delayed only).  
+  - `04_to_sync_delayed.sh` — Phase 2: sync delayed artifacts (e.g. list.manifest.json, manifest.json).  
+  - `05_to_sync_stats.sh` — File statistics (X-Artifactory headers / checksum deploy).  
+  - `06_to_sync_folder_props.sh` — Folder properties sync to target.
 
-### Step 5: Run reconciliation in order (Phase 1 → Phase 2 → rerun compare → Phase 2b → statistics)
+  **After-upload** (`--after-upload`): 07–09 (and 01–02 for consistency, often empty)  
+  - `07_to_sync_download_stats.sh` — Download stats (downloadCount, lastDownloaded, lastDownloadedBy) via `:statistics` endpoint.  
+  - `08_to_sync_props.sh` — Properties sync to target.  
+  - `09_to_sync_folder_stats_as_properties.sh` — Folder stats as sync.* custom properties on folders.
 
-Execute the generated scripts in this order so that structure and metadata are fixed before syncing and before stats.
+**Flow:** Run compare with `--b4upload` → run 01–06. After uploading, run compare with `--after-upload` → run 07–09. See [QUICKSTART.md](QUICKSTART.md).
 
-**Phase 1 – Consolidate (same instance)**  
-Fixes abnormal repo layout on the **source/target** side before cross-instance sync.
+### Step 5: Run reconciliation in order (before-upload → after-upload)
+
+Execute the generated scripts in numeric order. Use **two compare runs**: first **before-upload** (generates 01–06), then after binaries/stats are on the target, **after-upload** (generates 07–09). See [QUICKSTART.md](QUICKSTART.md) for the full flow.
+
+**Before-upload run** — Generate and run 01–06:
 
 ```bash
-./01_to_consolidate.sh      # binaries: consolidate repos on same instance
-./02_to_consolidate_props.sh # properties: consolidate
+./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
 ```
 
-**Phase 2 – Sync binaries to target**  
-Syncs binaries from source to target: first non-delayed (03), then delayed artifacts (05, e.g. list.manifest.json, manifest.json).
+**Phase 1 – Consolidate (if needed)**  
+Fixes abnormal repo layout on the same instance before cross-instance sync.
 
 ```bash
-./03_to_sync.sh             # binaries: sync to target instance
-./05_to_sync_delayed.sh     # delayed binaries
+./01_to_consolidate.sh
+./02_to_consolidate_props.sh
 ```
 
-**Between Phase 2 and Phase 2b – Rerun compare and regenerate scripts**  
-After Phase 2, the target has new binaries. Rerun compare with collect-stats/properties and reconcile so that property and statistics scripts (04, 06–09) are regenerated from the updated state:
+**Phase 2 – Sync binaries, delayed, stats, folder props**  
+Run in output dir (e.g. `b4_upload/`) with `runcommand_in_parallel_from_file.sh` or directly:
 
 ```bash
-./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
+./03_to_sync.sh             # binaries: sync to target
+./04_to_sync_delayed.sh     # optional: delayed artifacts (e.g. manifest.json)
+./05_to_sync_stats.sh       # file stats (checksum deploy)
+./06_to_sync_folder_props.sh
 ```
 
-Then continue with Phase 2b and Statistics using the newly generated `04_*`, `06_*`–`09_*` scripts.
-
-**Phase 2b – Sync properties to target**  
-Syncs properties from source to target (sync and delayed). Run after Phase 2 and the rerun above.
+**After-upload run** — Generate and run 07–09:
 
 ```bash
-./04_to_sync_props.sh       # properties: sync to target
-./06_to_sync_delayed_props.sh   # delayed properties
+./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
 ```
 
-**Statistics reconciliation**  
-Syncs file stats, download stats, and folder stats. Run after Phase 2b so that artifacts and properties are in place.
+Then in the after-upload output dir:
 
 ```bash
-./07_to_sync_stats.sh           # file stats (checksum deploy / X-Artifactory headers)
-./08_to_sync_download_stats.sh   # downloadCount, lastDownloaded, lastDownloadedBy
-./09_to_sync_folder_stats.sh    # folder stats (sync.* custom properties)
+./07_to_sync_download_stats.sh
+./08_to_sync_props.sh
+./09_to_sync_folder_stats_as_properties.sh
 ```
 
 If any script is empty (no commands), there is nothing to reconcile for that phase.
@@ -214,9 +219,8 @@ Open the timestamped CSV report to see which paths had mismatches and confirm th
 | Phase | Scripts | What is reconciled |
 |-------|---------|---------------------|
 | **Phase 1** | `01_to_consolidate.sh`, `02_to_consolidate_props.sh` | Binaries and properties that need to be consolidated from abnormal to normalized repos on the **same** instance. |
-| **Phase 2** | `03_to_sync.sh`, `05_to_sync_delayed.sh` | Binaries that need to be **synced to the target** (non-delayed and delayed, e.g. list.manifest.json, manifest.json). |
-| **Phase 2b** | `04_to_sync_props.sh`, `06_to_sync_delayed_props.sh` | Properties that need to be **synced to the target** (sync and delayed). Run after Phase 2 and rerun compare. |
-| **Statistics** | `07_to_sync_stats.sh`, `08_to_sync_download_stats.sh`, `09_to_sync_folder_stats.sh` | File stats (artifact metadata), download statistics (count, last downloaded, by whom), and folder-level stats (via custom properties). |
+| **Phase 2 (before-upload)** | `03_to_sync.sh`, `04_to_sync_delayed.sh`, `05_to_sync_stats.sh`, `06_to_sync_folder_props.sh` | Binaries synced to target (03, 04), file stats / checksum deploy (05), folder properties (06). Generated with `--b4upload`. |
+| **After-upload** | `07_to_sync_download_stats.sh`, `08_to_sync_props.sh`, `09_to_sync_folder_stats_as_properties.sh` | Download stats, properties sync, folder stats as properties. Generated with `--after-upload`. |
 
 The exact behavior of each view and command comes from the **jfrog-cli-plugin-compare** plugin. For view names and details, refer to that plugin’s documentation.
 

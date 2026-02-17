@@ -449,7 +449,7 @@ if [ "$RECONCILE" == "1" ]; then
         echo "  → Run: $outpath (or from $OUT_DIR: ./$outfile)"
         # read -p "  Press Enter after you have run it to continue to the next script..."
     done
-    echo "Done. Review and run scripts in numeric order (01_to_consolidate.sh ... 09_to_sync_folder_stats.sh)."
+    echo "Done. Review and run scripts in numeric order (01_to_consolidate.sh ... 09_to_sync_folder_stats_as_properties.sh)."
 fi
 
 # ----------------------------------------------------------------------------
