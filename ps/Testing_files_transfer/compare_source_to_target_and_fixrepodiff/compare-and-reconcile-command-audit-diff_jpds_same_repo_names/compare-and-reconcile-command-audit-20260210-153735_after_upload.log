@@ -5,8 +5,8 @@ jf compare authority-add app2 http://35.237.191.14/artifactory/
 jf compare credentials-add app2 --cli-profile=app2 --discovery=artifactory_aql
 jf compare list app1 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local
 jf compare list app2 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local
-jf compare report --jsonl reconcile_phase1_consolidate
-jf compare report --jsonl properties_reconcile_phase1_consolidate
-jf compare report --jsonl reconcile_download_stats
-jf compare report --jsonl properties_reconcile_phase2_sync
-jf compare report --jsonl reconcile_folder_stats
+jf compare report --jsonl reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 01_to_consolidate.sh
+jf compare report --jsonl properties_reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 02_to_consolidate_props.sh
+jf compare report --jsonl reconcile_download_stats | jq -r '.cmd' | sort -u > 07_to_sync_download_stats.sh
+jf compare report --jsonl properties_reconcile_phase2_sync | jq -r '.cmd' | sort -u > 08_to_sync_props.sh
+jf compare report --jsonl reconcile_folder_stats | jq -r '.cmd' | sort -u > 09_to_sync_folder_stats_as_properties.sh
