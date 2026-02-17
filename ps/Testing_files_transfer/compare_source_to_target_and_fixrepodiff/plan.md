@@ -94,6 +94,37 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 **Implemented:** CLI `--aql-style <style>` on both scripts; env `COMPARE_AQL_STYLE`; appended `$AQL_STYLE_FLAG` to all 4 active list calls in compare-and-reconcile.sh; help text updated in both scripts.
 
+### 1.8 QUICKSTART: automated one-shot testing examples
+
+- [x] **T15** Add a section to [QUICKSTART.md](QUICKSTART.md) (in or near the "One-shot option" section) showing how to run `sync-target-from-source.sh` with each example config file, covering both **default AQL style** and **`--aql-style sha1-prefix`** crawl modes. Include:
+
+  **Default AQL style (repo-based crawl):**
+  ```bash
+  # Different JPDs, same repo names
+  bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh
+
+  # Different JPDs, different repo names (target uses underscore repos)
+  bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_diff_repos.sh
+
+  # Same JPD, different repo names (underscore target repos)
+  bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_test_underscore.sh
+  ```
+
+  **AQL style `sha1-prefix` (SHA1-prefix crawl):**
+  ```bash
+  bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh --aql-style sha1-prefix
+
+  bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_diff_repos.sh --aql-style sha1-prefix
+
+  bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_test_underscore.sh --aql-style sha1-prefix
+  ```
+
+  Also note:
+  - `--run-delayed` is optional and usually not needed. `05_to_sync_stats.sh` creates Docker manifests via checksum-deploy, which implicitly creates parent folders. Use `--run-delayed` only if you want to explicitly run `04_to_sync_delayed.sh` before the stats sync.
+  - Reference the example config files in `config_env_examples/` and their scenarios.
+
+**Implemented:** Added "Example one-shot runs with config files" subsection to QUICKSTART.md under the "One-shot option" section, with all six example commands (three default, three sha1-prefix) and a note about `--run-delayed` being optional.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

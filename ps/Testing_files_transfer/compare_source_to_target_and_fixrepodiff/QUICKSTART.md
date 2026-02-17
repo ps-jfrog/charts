@@ -226,7 +226,36 @@ To run the full sync without executing each step manually, set the required envi
 ./sync-target-from-source.sh
 ```
 
-Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`) and output directories.
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`) and output directories.
+
+### Example one-shot runs with config files
+
+Example environment config files are in [`config_env_examples/`](config_env_examples/). Each file sets source/target URLs, authorities, repo lists, and discovery method for a specific scenario.
+
+**Default AQL style (repo-based crawl):**
+
+```bash
+# Different JPDs, same repo names
+bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh
+
+# Different JPDs, different repo names (target uses underscore repos)
+bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_diff_repos.sh
+
+# Same JPD, different repo names (underscore target repos)
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_test_underscore.sh
+```
+
+**AQL style `sha1-prefix` (SHA1-prefix crawl):**
+
+```bash
+bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh --aql-style sha1-prefix
+
+bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_jpds_diff_repos.sh --aql-style sha1-prefix
+
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_test_underscore.sh --aql-style sha1-prefix
+```
+
+> **Note:** `--run-delayed` is optional and usually not needed. `05_to_sync_stats.sh` creates Docker manifests via checksum-deploy, which implicitly creates parent folders. Use `--run-delayed` only if you want to explicitly run `04_to_sync_delayed.sh` before the stats sync.
 
 ---
 
