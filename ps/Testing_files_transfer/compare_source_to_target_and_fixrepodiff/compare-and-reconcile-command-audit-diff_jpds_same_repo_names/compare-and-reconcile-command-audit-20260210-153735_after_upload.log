@@ -1,10 +1,11 @@
+export JFROG_CLI_LOG_LEVEL="DEBUG"
 jf compare init --clean
 jf compare authority-add app1 http://34.26.104.216/artifactory/
 jf compare credentials-add app1 --cli-profile=app1 --discovery=artifactory_aql
 jf compare authority-add app2 http://35.237.191.14/artifactory/
 jf compare credentials-add app2 --cli-profile=app2 --discovery=artifactory_aql
-jf compare list app1 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local
-jf compare list app2 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local
+jf compare list app1 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local --aql-style=sha1-prefix
+jf compare list app2 --collect-stats --collect-properties --repos=sv-docker-local,example-repo-local --aql-style=sha1-prefix
 jf compare report --jsonl reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 01_to_consolidate.sh
 jf compare report --jsonl properties_reconcile_phase1_consolidate | jq -r '.cmd' | sort -u > 02_to_consolidate_props.sh
 jf compare report --jsonl reconcile_download_stats | jq -r '.cmd' | sort -u > 07_to_sync_download_stats.sh

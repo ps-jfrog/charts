@@ -1,4 +1,5 @@
 # Case a: Artifactory SH (source) → Artifactory Cloud (target)
+
 export COMPARE_SOURCE_NEXUS="0"
 export COMPARE_TARGET_ARTIFACTORY_SH="1"
 export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"

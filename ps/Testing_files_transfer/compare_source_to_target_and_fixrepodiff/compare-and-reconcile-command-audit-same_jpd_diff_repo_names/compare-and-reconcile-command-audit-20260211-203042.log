@@ -1,3 +1,4 @@
+export JFROG_CLI_LOG_LEVEL="DEBUG"
 jf compare init --clean
 jf compare authority-add app2 http://35.237.191.14/artifactory/
 jf compare credentials-add app2 --cli-profile=app2 --discovery=artifactory_aql
