@@ -87,6 +87,7 @@ Copy one as a template, edit URLs, authorities, and repo lists, then run with `-
 | `--run-delayed` | Run `04_to_sync_delayed.sh`. By default it is skipped (delayed manifests are often created by the stats sync). |
 | `--max-parallel <N>` | Max concurrent commands when running reconciliation scripts (default: 10). |
 | `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_STYLE`. |
+| `--include-remote-cache` | Include remote-cache repos (e.g. `npmjs-remote-cache`) in the crawl. Required when repos are remote-cache type; without it they are silently excluded. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_INCLUDE_REMOTE_CACHE=1`. |
 | `-h`, `--help` | Show usage and exit. |
 
 ---

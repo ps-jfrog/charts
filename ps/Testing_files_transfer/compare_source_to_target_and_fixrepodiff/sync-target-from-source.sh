@@ -20,6 +20,22 @@
 
 set -euo pipefail
 
+OVERALL_START=$(date +%s)
+
+format_elapsed() {
+  local secs=$(( $(date +%s) - $1 ))
+  local h=$(( secs / 3600 ))
+  local m=$(( (secs % 3600) / 60 ))
+  local s=$(( secs % 60 ))
+  if [[ $h -gt 0 ]]; then
+    printf '%dh %dm %ds' $h $m $s
+  elif [[ $m -gt 0 ]]; then
+    printf '%dm %ds' $m $s
+  else
+    printf '%ds' $s
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"
 # B4_DIR and AFTER_DIR are set after config is sourced so RECONCILE_BASE_DIR from env.sh is respected
@@ -30,6 +46,10 @@ SKIP_CONSOLIDATION=0
 SKIP_DELAYED=1
 CONFIG_FILE=""
 AQL_STYLE=""
+INCLUDE_REMOTE_CACHE=""
+GENERATE_ONLY=0
+RUN_ONLY=0
+RUN_FOLDER_STATS=0
 
 show_help() {
   cat << EOF
@@ -43,11 +63,22 @@ Step 1 (environment variables) must be done before running this script, or use -
 
 OPTIONS:
   --config <file>       Source <file> before running (e.g. export COMPARE_* and REPO vars).
+  --generate-only       Run before-upload compare (Step 2) to generate scripts 01–06 but do NOT
+                        execute any of them. Exit after printing a summary. Use --run-only later
+                        to execute. Mutually exclusive with --run-only.
+  --run-only            Skip before-upload compare (Step 2); execute previously generated
+                        scripts (Steps 3–5). The output directory must already contain scripts
+                        from a prior --generate-only run. Mutually exclusive with --generate-only.
   --skip-consolidation  Do not run 01_to_consolidate.sh or 02_to_consolidate_props.sh.
   --run-delayed         Run 04_to_sync_delayed.sh (default: skip it).
+  --run-folder-stats    Run 09_to_sync_folder_stats_as_properties.sh in the after-upload phase
+                        (default: skip it).
   --max-parallel <N>    Max concurrent commands when running reconciliation scripts (default: 10).
   --aql-style <style>   AQL crawl style for 'jf compare list' (e.g. sha1-prefix). Passed to
                         compare-and-reconcile.sh. Also settable via env COMPARE_AQL_STYLE.
+  --include-remote-cache  Include remote-cache repos in the crawl. Required when --repos names a
+                        remote-cache repo (e.g. npmjs-remote-cache). Passed to compare-and-reconcile.sh.
+                        Also settable via env COMPARE_INCLUDE_REMOTE_CACHE=1.
   -h, --help            Show this help.
 
 ENVIRONMENT (Step 1 – set these or use --config):
@@ -95,6 +126,22 @@ while [[ $# -gt 0 ]]; do
       AQL_STYLE="$2"
       shift 2
       ;;
+    --include-remote-cache)
+      INCLUDE_REMOTE_CACHE=1
+      shift
+      ;;
+    --generate-only)
+      GENERATE_ONLY=1
+      shift
+      ;;
+    --run-only)
+      RUN_ONLY=1
+      shift
+      ;;
+    --run-folder-stats)
+      RUN_FOLDER_STATS=1
+      shift
+      ;;
     *)
       echo "Unknown option: $1" >&2
       show_help
@@ -102,6 +149,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$GENERATE_ONLY" -eq 1 ]] && [[ "$RUN_ONLY" -eq 1 ]]; then
+  echo "Error: --generate-only and --run-only are mutually exclusive." >&2
+  exit 1
+fi
 
 if [[ ! "$MAX_PARALLEL" =~ ^[1-9][0-9]*$ ]]; then
   echo "Error: --max-parallel must be a positive integer." >&2
@@ -123,6 +175,9 @@ fi
 
 # AQL style: CLI flag overrides env; env from config is also respected
 [[ -n "$AQL_STYLE" ]] && export COMPARE_AQL_STYLE="$AQL_STYLE"
+
+# Include remote-cache: CLI flag overrides env; env from config is also respected
+[[ -n "$INCLUDE_REMOTE_CACHE" ]] && export COMPARE_INCLUDE_REMOTE_CACHE="$INCLUDE_REMOTE_CACHE"
 
 # Output dirs: respect RECONCILE_BASE_DIR from config or environment
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"
@@ -168,8 +223,10 @@ run_script_if_exists() {
   local name="$2"
   local out_log="${name%.sh}_out.txt"
   if [[ -f "$dir/$name" ]]; then
+    local _start=$(date +%s)
     echo "  Running $name ..."
     ( cd "$dir" && bash "$RUNNER" --log-success "./$name" "./$out_log" "$MAX_PARALLEL" )
+    echo "  [timing] $name completed in $(format_elapsed $_start)"
   else
     echo "  Skipping $name (not generated)."
   fi
@@ -187,8 +244,10 @@ group_and_run_sync() {
   local base="${name%.sh}"
   local grouped="${base}_grouped.sh"
   if [[ -f "$GROUPER" ]] && [[ -r "$GROUPER" ]]; then
+    local _gstart=$(date +%s)
     echo "  Grouping $name by SHA1 to reduce duplicate downloads ..."
     bash "$GROUPER" "$dir/$name"
+    echo "  [timing] Grouping $name completed in $(format_elapsed $_gstart)"
     run_script_if_exists "$dir" "$grouped"
   else
     echo "  group_sync_by_sha1.sh not found; running $name without grouping" >&2
@@ -197,11 +256,40 @@ group_and_run_sync() {
 }
 
 # Step 2: Compare and reconcile (before-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports are created there
-echo "=== Step 2: Compare and reconcile (before-upload) ==="
-export RECONCILE_OUTPUT_DIR="$B4_DIR"
-( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" --b4upload --collect-stats-properties --reconcile --target-only )
+STEP2_START=$(date +%s)
+if [[ "$RUN_ONLY" -eq 1 ]]; then
+  echo "=== Step 2: Skipped (--run-only) ==="
+  if [[ ! -d "$B4_DIR" ]]; then
+    echo "Error: Before-upload output directory not found: $B4_DIR" >&2
+    echo "  Run with --generate-only first to create it." >&2
+    exit 1
+  fi
+else
+  echo "=== Step 2: Compare and reconcile (before-upload) ==="
+  export RECONCILE_OUTPUT_DIR="$B4_DIR"
+  ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" --b4upload --collect-stats-properties --reconcile --target-only )
+fi
+echo "[timing] Step 2 (before-upload compare) completed in $(format_elapsed $STEP2_START)"
+
+# --generate-only: print summary and exit before executing any scripts
+if [[ "$GENERATE_ONLY" -eq 1 ]]; then
+  echo ""
+  echo "=== --generate-only: scripts generated in $B4_DIR ==="
+  for f in "$B4_DIR"/*.sh; do
+    [[ -f "$f" ]] || continue
+    local_name="$(basename "$f")"
+    lines=$(wc -l < "$f" | tr -d ' ')
+    echo "  $local_name  ($lines lines)"
+  done
+  echo ""
+  echo "Review these scripts, then run with --run-only to execute Steps 3–5."
+  echo ""
+  echo "[timing] Total elapsed: $(format_elapsed $OVERALL_START)"
+  exit 0
+fi
 
 # Step 3: Before-upload reconciliation scripts
+STEP3_START=$(date +%s)
 echo "=== Step 3: Before-upload reconciliation scripts ==="
 if [[ "$SKIP_CONSOLIDATION" -eq 0 ]]; then
   run_script_if_exists "$B4_DIR" "01_to_consolidate.sh"
@@ -211,8 +299,10 @@ if [[ "$SAME_ARTIFACTORY_URL" -eq 1 ]]; then
   # Same Artifactory: use jf rt cp (server-side copy, no temp files)
   if [[ -f "$B4_DIR/03_to_sync.sh" ]]; then
     if [[ -f "$CONVERTER" ]] && [[ -r "$CONVERTER" ]]; then
+      local_conv_start=$(date +%s)
       echo "  Same Artifactory URL: generating 03_to_sync_using_copy.sh (jf rt cp) from 03_to_sync.sh ..."
       bash "$CONVERTER" "$B4_DIR/03_to_sync.sh"
+      echo "  [timing] Converting 03_to_sync.sh → 03_to_sync_using_copy.sh completed in $(format_elapsed $local_conv_start)"
       run_script_if_exists "$B4_DIR" "03_to_sync_using_copy.sh"
     else
       echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; falling back to grouped dl+upload" >&2
@@ -230,8 +320,10 @@ if [[ "$SKIP_DELAYED" -eq 0 ]]; then
     # Same Artifactory: use jf rt cp (server-side copy, no temp files)
     if [[ -f "$B4_DIR/04_to_sync_delayed.sh" ]]; then
       if [[ -f "$CONVERTER" ]] && [[ -r "$CONVERTER" ]]; then
+        local_conv_start=$(date +%s)
         echo "  Same Artifactory URL: generating 04_to_sync_delayed_using_copy.sh (jf rt cp) from 04_to_sync_delayed.sh ..."
         bash "$CONVERTER" "$B4_DIR/04_to_sync_delayed.sh"
+        echo "  [timing] Converting 04_to_sync_delayed.sh → 04_to_sync_delayed_using_copy.sh completed in $(format_elapsed $local_conv_start)"
         run_script_if_exists "$B4_DIR" "04_to_sync_delayed_using_copy.sh"
       else
         echo "  Same Artifactory URL but convert_dl_upload_to_rt_cp.sh not found; falling back to grouped dl+upload" >&2
@@ -247,20 +339,31 @@ if [[ "$SKIP_DELAYED" -eq 0 ]]; then
 fi
 run_script_if_exists "$B4_DIR" "05_to_sync_stats.sh"
 run_script_if_exists "$B4_DIR" "06_to_sync_folder_props.sh"
+echo "[timing] Step 3 (before-upload reconciliation) completed in $(format_elapsed $STEP3_START)"
 
 # Step 4: Compare and reconcile (after-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports stay there
+STEP4_START=$(date +%s)
 echo "=== Step 4: Compare and reconcile (after-upload) ==="
 export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
 ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" --after-upload --collect-stats-properties --reconcile --target-only )
+echo "[timing] Step 4 (after-upload compare) completed in $(format_elapsed $STEP4_START)"
 
 # Step 5: After-upload reconciliation scripts
+STEP5_START=$(date +%s)
 echo "=== Step 5: After-upload reconciliation scripts ==="
 run_script_if_exists "$AFTER_DIR" "07_to_sync_download_stats.sh"
 run_script_if_exists "$AFTER_DIR" "08_to_sync_props.sh"
-run_script_if_exists "$AFTER_DIR" "09_to_sync_folder_stats_as_properties.sh"
+if [[ "$RUN_FOLDER_STATS" -eq 1 ]]; then
+  run_script_if_exists "$AFTER_DIR" "09_to_sync_folder_stats_as_properties.sh"
+else
+  echo "  Skipping 09_to_sync_folder_stats_as_properties.sh (use --run-folder-stats to include)."
+fi
+echo "[timing] Step 5 (after-upload reconciliation) completed in $(format_elapsed $STEP5_START)"
 
 echo ""
 echo "=== Sync workflow complete ==="
 echo "  Before-upload output: $B4_DIR"
 echo "  After-upload output:  $AFTER_DIR"
 echo "  Next: Verify from target (e.g. docker pull). See QUICKSTART.md Step 6."
+echo ""
+echo "[timing] Total elapsed: $(format_elapsed $OVERALL_START)"

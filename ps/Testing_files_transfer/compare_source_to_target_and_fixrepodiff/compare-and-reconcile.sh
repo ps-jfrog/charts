@@ -61,6 +61,9 @@ OPTIONS:
                                One-way sync: make target match source. Drops commands that update the source.
   --aql-style <style>          AQL crawl style for 'jf compare list' (e.g. sha1-prefix). If not set, uses the
                                default repo-based crawl. Also settable via env COMPARE_AQL_STYLE.
+  --include-remote-cache       Include remote-cache repos in the crawl. Required when --repos names a
+                               remote-cache repo (e.g. npmjs-remote-cache). Also settable via env
+                               COMPARE_INCLUDE_REMOTE_CACHE=1.
   -h, --help                   Show this help.
 
 ENVIRONMENT (same as compare-artifacts.sh):
@@ -80,6 +83,7 @@ RECONCILIATION:
   RECONCILE_TARGET_ONLY=1      Same as --target-only (filter scripts so only target-side commands remain).
   RECONCILE_OUTPUT_DIR=<dir>   Where to write to_*.sh scripts (default: current directory).
   COMPARE_AQL_STYLE=<style>    Same as --aql-style (e.g. sha1-prefix). Appended to all 'jf compare list' calls.
+  COMPARE_INCLUDE_REMOTE_CACHE=1  Same as --include-remote-cache.
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
@@ -92,6 +96,7 @@ EOF
 # Parse options
 RECONCILE_MODE=""
 AQL_STYLE="${COMPARE_AQL_STYLE:-}"
+INCLUDE_REMOTE_CACHE="${COMPARE_INCLUDE_REMOTE_CACHE:-0}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --b4upload)
@@ -119,6 +124,10 @@ while [[ $# -gt 0 ]]; do
             AQL_STYLE="$2"
             shift 2
             ;;
+        --include-remote-cache)
+            INCLUDE_REMOTE_CACHE=1
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -134,6 +143,10 @@ done
 # Build AQL style flag (empty when not set → default repo-based crawl)
 AQL_STYLE_FLAG=""
 [[ -n "$AQL_STYLE" ]] && AQL_STYLE_FLAG="--aql-style=$AQL_STYLE"
+
+# Build include-remote-cache flag (empty when not set → only LOCAL/FEDERATED repos)
+INCLUDE_REMOTE_CACHE_FLAG=""
+[[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && INCLUDE_REMOTE_CACHE_FLAG="--include-remote-cache"
 
 # Require mode (--b4upload or --after-upload)
 if [ -z "$RECONCILE_MODE" ]; then
@@ -250,6 +263,7 @@ echo "=== Compare and Reconcile ==="
 echo "Scenario: $COMPARISON_SCENARIO | Discovery: $ARTIFACTORY_DISCOVERY_METHOD | Report: $REPORT_FILE"
 echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIES | Generate reconcile scripts: $RECONCILE"
 [ -n "$AQL_STYLE" ] && echo "AQL style: $AQL_STYLE"
+[[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && echo "Include remote-cache repos: yes"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -347,17 +361,17 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
             echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
             if [ -n "${SH_LIST_REPOS:-}" ]; then
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
             else
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
             fi
             echo ""
         fi
         echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
         if [ -n "${TARGET_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         else
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         fi
         echo ""
     fi

@@ -208,6 +208,40 @@ If sync completed successfully, pulls from the target should match what you had 
 
 ---
 
+## Verifying excluded files in comparison.db
+
+The compare plugin uses **exclusion rules** (seeded in `03a-table-exclusion-rules.sql`) to skip certain paths during artifact sync (e.g. npm metadata `.json` files, maven `pom.xml`, checksum files). You can query `comparison.db` to see which source artifacts were excluded and confirm that all non-excluded files have been synced.
+
+**Count of excluded files in the source repo:**
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT COUNT(*) AS excluded_count
+FROM artifacts a
+JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern
+WHERE a.source = 'psazuse'
+  AND a.repository_name = 'npmjs-remote-cache';
+"
+```
+
+**List of excluded files with the matching exclusion rule:**
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT a.uri, r.pattern, r.reason
+FROM artifacts a
+JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern
+WHERE a.source = 'psazuse'
+  AND a.repository_name = 'npmjs-remote-cache'
+ORDER BY a.uri;
+"
+```
+
+> **Note:** Replace `psazuse` and `npmjs-remote-cache` with your source authority and repo name. You can find these values with:
+> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
+
+---
+
 ## Script reference
 
 | Script | Purpose |
@@ -226,7 +260,34 @@ To run the full sync without executing each step manually, set the required envi
 ./sync-target-from-source.sh
 ```
 
-Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`) and output directories.
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
+
+### Two-pass workflow: generate, review, then execute
+
+Use `--generate-only` to run the before-upload compare and generate scripts 01–06 **without executing them**, so you can review or edit them first:
+
+```bash
+# Pass 1: generate scripts for review (exits after Step 2)
+bash sync-target-from-source.sh --config env.sh --generate-only
+```
+
+The script prints a summary of generated scripts (names and line counts) and exits. Review the scripts in the `b4_upload/` output directory (e.g. inspect `03_to_sync.sh` line count, check `04_to_sync_delayed.sh` contents).
+
+Then use `--run-only` to skip generation and execute the previously generated scripts, continuing through the full workflow (Steps 3–5):
+
+```bash
+# Pass 2: execute scripts and complete full workflow
+bash sync-target-from-source.sh --config env.sh --run-only
+```
+
+Combine with other flags as needed:
+
+```bash
+# Execute with delayed artifacts and folder stats
+bash sync-target-from-source.sh --config env.sh --run-only --run-delayed --run-folder-stats
+```
+
+> **Note:** `--generate-only` and `--run-only` are mutually exclusive. `09_to_sync_folder_stats_as_properties.sh` is skipped by default in the after-upload phase; use `--run-folder-stats` to include it.
 
 ### Example one-shot runs with config files
 
@@ -255,7 +316,38 @@ bash sync-target-from-source.sh --config config_env_examples/env_app1_app2_diff_
 bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_test_underscore.sh --aql-style sha1-prefix
 ```
 
+**Remote-cache repos (require `--include-remote-cache`):**
+
+```bash
+# npm remote-cache, default crawl
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_folder-crawl.sh --include-remote-cache
+
+# npm remote-cache, sha1-prefix crawl
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh --include-remote-cache --aql-style sha1-prefix
+```
+
+> **Note:** `--include-remote-cache` is required whenever the repos being crawled are remote-cache type (e.g. `npmjs-remote-cache`). Without it, the compare plugin silently skips them.
+
 > **Note:** `--run-delayed` is optional and usually not needed. `05_to_sync_stats.sh` creates Docker manifests via checksum-deploy, which implicitly creates parent folders. Use `--run-delayed` only if you want to explicitly run `04_to_sync_delayed.sh` before the stats sync.
+
+**Full sync + verification run (npm remote-cache, sha1-prefix):**
+
+Run the full sync in two passes (generate → review → execute with folder stats), then verify convergence with a second generate-only run:
+
+```bash
+# Run 1: generate scripts, review, then execute (including folder stats)
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh --generate-only --include-remote-cache --aql-style sha1-prefix
+bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix
+
+# Run 2 (verification): re-generate into a separate output dir to confirm convergence
+# Use a config with a different RECONCILE_BASE_DIR pointing to a run2 directory
+bash sync-target-from-source.sh --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh --generate-only --include-remote-cache --aql-style sha1-prefix
+bash sync-target-from-source.sh --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix
+```
+
+After Run 2, the generated scripts (`03_to_sync.sh`, `05_to_sync_stats.sh`, etc.) should have zero or near-zero lines, confirming that source and target are in sync.
+
+> **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands without worrying about the repo type.
 
 ---
 
@@ -263,7 +355,7 @@ bash sync-target-from-source.sh --config config_env_examples/env_app2_app3_same_
 
 1. Set env vars (source/target URLs, authorities, repos).
 2. **Before upload:** `./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only` → run 03, 04 (optional), 05, 06 (and 01, 02 if needed).
-3. **After upload:** Set `RECONCILE_OUTPUT_DIR` to a new dir; `./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only` → run 07, 08, 09.
+3. **After upload:** Set `RECONCILE_OUTPUT_DIR` to a new dir; `./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only` → run 07, 08, 09 (09 only with `--run-folder-stats`).
 4. Verify with `docker pull` or other clients against the target.
 
 For more options and environment variables, run:

@@ -125,6 +125,79 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 **Implemented:** Added "Example one-shot runs with config files" subsection to QUICKSTART.md under the "One-shot option" section, with all six example commands (three default, three sha1-prefix) and a note about `--run-delayed` being optional.
 
+### 1.9 Split generation and execution of reconciliation scripts
+
+- [x] **T16** Add flags to [sync-target-from-source.sh](sync-target-from-source.sh) for splitting the workflow into a generation phase and an execution phase. Implementation:
+
+  **a) `--generate-only`** — Generate the initial sync scripts but do not execute them; exit immediately.
+  - Add `--generate-only` CLI option (and optionally env `GENERATE_ONLY=1`).
+  - Run `compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only` as usual (Step 2). This generates **only** the before-upload scripts that can be produced without executing anything:
+    - `01_to_consolidate.sh`
+    - `02_to_consolidate_props.sh`
+    - `03_to_sync.sh`
+    - `04_to_sync_delayed.sh`
+  - Print a summary of the generated scripts (names and line counts) and **exit** before executing any of them.
+  - **Note:** `05_to_sync_stats.sh` and `06_to_sync_folder_props.sh` are **not** generated in this step because they are part of the same before-upload compare output. Actually, the `--b4upload` compare generates all six (01–06). So `--generate-only` generates 01–06 but exits before executing any.
+  - **Purpose:** Allows the user to review `03_to_sync.sh` / `04_to_sync_delayed.sh` (the download+upload scripts) and edit them if needed before execution.
+
+  **b) `--run-only`** — Skip the before-upload compare (Step 2), execute the previously generated scripts, then continue with after-upload.
+  - Add `--run-only` CLI option (and optionally env `RUN_ONLY=1`).
+  - **Skip Step 2** entirely (no `compare-and-reconcile.sh --b4upload ...`). The output directory must already contain the generated scripts from a prior `--generate-only` run (error if the directory or key scripts are not found).
+  - **Execute Step 3** — Run the before-upload reconciliation scripts from the existing output directory:
+    - `01_to_consolidate.sh`, `02_to_consolidate_props.sh` (unless `--skip-consolidation`)
+    - `03_to_sync.sh` (with `jf rt cp` conversion or SHA1 grouping as usual)
+    - `04_to_sync_delayed.sh` (only if `--run-delayed`)
+    - `05_to_sync_stats.sh`
+    - `06_to_sync_folder_props.sh`
+  - **Continue with Step 4** — Run `compare-and-reconcile.sh --after-upload ...` to generate after-upload scripts (07–09), since the target now has the new binaries/stats.
+  - **Execute Step 5** — Run the after-upload reconciliation scripts:
+    - `07_to_sync_download_stats.sh`
+    - `08_to_sync_props.sh`
+    - `09_to_sync_folder_stats_as_properties.sh` (only if `--run-folder-stats`)
+  - This is the companion to `--generate-only`: first `--generate-only` to review, then `--run-only` to execute and complete the full workflow.
+
+  **c) `--run-folder-stats`** — Run `09_to_sync_folder_stats_as_properties.sh` only when explicitly requested.
+  - Add `--run-folder-stats` CLI option (and optionally env `RUN_FOLDER_STATS=1`).
+  - By default, `09_to_sync_folder_stats_as_properties.sh` is **skipped** in the after-upload phase (Step 5).
+  - When `--run-folder-stats` is provided, include it in the after-upload execution.
+
+  **Typical two-pass workflow:**
+  ```bash
+  # Pass 1: generate scripts for review (exits after Step 2)
+  bash sync-target-from-source.sh --config env.sh --generate-only
+
+  # User reviews 03_to_sync.sh, 04_to_sync_delayed.sh, etc. in the output dir
+
+  # Pass 2: execute scripts and complete full workflow (Steps 3–5)
+  bash sync-target-from-source.sh --config env.sh --run-only --run-delayed --run-folder-stats
+  ```
+
+  - Update help text in `sync-target-from-source.sh`, and document in `README-sync-target-from-source.md` and `QUICKSTART.md`.
+
+**Implemented:** Added `--generate-only`, `--run-only`, and `--run-folder-stats` CLI flags with mutual-exclusion validation. `--generate-only` runs Step 2 then prints script summary and exits. `--run-only` skips Step 2, validates output dir exists, then executes Steps 3–5. `09_to_sync_folder_stats_as_properties.sh` is skipped unless `--run-folder-stats` is provided. Help text updated.
+
+### 1.10 Include remote-cache repositories in crawl
+
+- [x] **T17** Support `--include-remote-cache` on `jf compare list` commands so that remote-cache repos (e.g. `npmjs-remote-cache`) are crawled. Without this flag, the plugin's repo type filter (`repoType == "REMOTE"`) silently excludes remote-cache repos even when explicitly named via `--repos=`. Implementation (similar to T14 `--aql-style`):
+  - **compare-and-reconcile.sh:** Accept `--include-remote-cache` CLI option; also read from env `COMPARE_INCLUDE_REMOTE_CACHE`. Build a flag string (e.g. `INCLUDE_REMOTE_CACHE_FLAG="--include-remote-cache"`) and append to all active `jf compare list` calls. If not set, no flag is passed (default: only LOCAL/FEDERATED repos).
+  - **sync-target-from-source.sh:** Accept `--include-remote-cache` CLI option; pass through to `compare-and-reconcile.sh` via env `COMPARE_INCLUDE_REMOTE_CACHE` or CLI arg.
+  - **Config env files:** Optionally set `COMPARE_INCLUDE_REMOTE_CACHE=1`.
+  - **Documentation:** Update help text in both scripts, and document in `README.md`, `README-sync-target-from-source.md`, and `QUICKSTART.md`.
+  - **Background:** The compare plugin (`aql.go` line 462) filters repos by type: only `LOCAL`, `FEDERATED`, `VIRTUAL` (if `--include-virtual`), and `REMOTE` (if `--include-remote` or `--include-remote-cache`) are included. The default folder-based crawl iterates `allowedRepos` — if the repo is filtered out, nothing is crawled. The sha1-prefix style accidentally works around this because an empty `allowedRepos` omits the repo filter from the AQL query, querying all repos on the server.
+
+  **Implemented:** Added `--include-remote-cache` CLI flag and `COMPARE_INCLUDE_REMOTE_CACHE` env variable to both `compare-and-reconcile.sh` and `sync-target-from-source.sh`. The flag is appended to all `jf compare list` calls. Help text updated in both scripts. Documentation updated in `README.md`, `README-sync-target-from-source.md`, and `QUICKSTART.md` (including example commands for npm remote-cache configs).
+
+### 1.11 Timing report for sync-target-from-source.sh
+
+- [x] **T18** Add elapsed-time reporting to `sync-target-from-source.sh` so that the operator can see how long each child script took and the overall wall-clock time. Implementation:
+  - **Per-script timing:** Before and after each `run_script_if_exists` (or equivalent execution point for `01_to_consolidate.sh` through `09_to_sync_folder_stats_as_properties.sh`), capture the epoch time. After the script finishes, print a line like `[timing] 03_to_sync.sh completed in 2m 34s`.
+  - **Per-step timing:** Print elapsed time for each major step (Step 1: env setup, Step 2: before-upload compare, Step 3: before-upload reconciliation, Step 4: after-upload compare, Step 5: after-upload reconciliation).
+  - **Overall timing:** Capture the start time at the top of `sync-target-from-source.sh` and print a summary at the end, e.g. `[timing] Total elapsed: 12m 45s`.
+  - **Format:** Use a helper function (e.g. `print_elapsed`) that takes a start epoch and prints a human-readable duration (e.g. `Xh Ym Zs` or `Ym Zs`).
+  - **No new dependencies:** Use only `date +%s` (POSIX) for epoch seconds; no external tools required.
+
+  **Implemented:** Added `format_elapsed` helper and `OVERALL_START` epoch capture at the top of `sync-target-from-source.sh`. Per-script timing in `run_script_if_exists` and `group_and_run_sync`, per-step timing for Steps 2–5, converter timing for inline jf-rt-cp conversion blocks, and overall elapsed time at the end (including `--generate-only` exit path).
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos
