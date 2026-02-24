@@ -198,6 +198,17 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Implemented:** Added `format_elapsed` helper and `OVERALL_START` epoch capture at the top of `sync-target-from-source.sh`. Per-script timing in `run_script_if_exists` and `group_and_run_sync`, per-step timing for Steps 2–5, converter timing for inline jf-rt-cp conversion blocks, and overall elapsed time at the end (including `--generate-only` exit path).
 
+### 1.12 Skip sync-only folder properties in 06_to_sync_folder_props.sh
+
+- [x] **T19** In `sync-target-from-source.sh`, before running `06_to_sync_folder_props.sh`, filter out lines that set **only** `sync.*` properties (no user-defined properties), and run only the lines that include at least one non-`sync.*` property. Implementation:
+  - **Filter script:** Create `filter_sync_only_folder_props.sh` that reads `06_to_sync_folder_props.sh` and produces `06a_lines_other_than_only_sync_folder_props.sh` in the same directory. The filter logic:
+    - Parse the property string (the single-quoted argument after the artifact path) from each `jf rt sp` line.
+    - Split properties by `;` and check each key (the part before `=`).
+    - If **every** property key starts with `sync.` (e.g. `sync.created`, `sync.createdBy`, `sync.modified`, `sync.modifiedBy`), the line sets only sync metadata — **exclude** it.
+    - If **any** property key does NOT start with `sync.` (e.g. `folder-color`, `temperature`), the line sets user-defined properties — **include** it.
+  - **Integration in `sync-target-from-source.sh`:** After `06_to_sync_folder_props.sh` is generated, run the filter script to produce `06a_lines_other_than_only_sync_folder_props.sh`, then run `06a` instead of `06`. If the filter script is not available, fall back to running `06` as-is.
+  - **Rationale:** The `sync.*` properties on folders are informational metadata stamps set by `09_to_sync_folder_stats_as_properties.sh` (after-upload phase). They are always regenerated from the internal folder metadata, which cannot be changed. Running these sync-only lines in the before-upload phase is a no-op that wastes time — especially on repos with thousands of folders. Lines that include user-defined properties (like `folder-color=red`) alongside `sync.*` properties must still be run because the user properties are the actual data being synced.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

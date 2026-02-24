@@ -203,6 +203,7 @@ COMPARE_SCRIPT="$SCRIPT_DIR/compare-and-reconcile.sh"
 RUNNER="$SCRIPT_DIR/runcommand_in_parallel_from_file.sh"
 CONVERTER="$SCRIPT_DIR/convert_dl_upload_to_rt_cp.sh"
 GROUPER="$SCRIPT_DIR/group_sync_by_sha1.sh"
+FOLDER_PROPS_FILTER="$SCRIPT_DIR/filter_sync_only_folder_props.sh"
 if [[ ! -f "$COMPARE_SCRIPT" ]] || [[ ! -r "$COMPARE_SCRIPT" ]]; then
   echo "Error: compare-and-reconcile.sh not found or not readable: $COMPARE_SCRIPT" >&2
   exit 1
@@ -338,7 +339,20 @@ if [[ "$SKIP_DELAYED" -eq 0 ]]; then
   fi
 fi
 run_script_if_exists "$B4_DIR" "05_to_sync_stats.sh"
-run_script_if_exists "$B4_DIR" "06_to_sync_folder_props.sh"
+if [[ -f "$B4_DIR/06_to_sync_folder_props.sh" ]]; then
+  if [[ -f "$FOLDER_PROPS_FILTER" ]] && [[ -r "$FOLDER_PROPS_FILTER" ]]; then
+    local_filter_start=$(date +%s)
+    echo "  Filtering 06_to_sync_folder_props.sh to exclude sync.*-only lines ..."
+    bash "$FOLDER_PROPS_FILTER" "$B4_DIR/06_to_sync_folder_props.sh"
+    echo "  [timing] Filtering 06_to_sync_folder_props.sh completed in $(format_elapsed $local_filter_start)"
+    run_script_if_exists "$B4_DIR" "06a_lines_other_than_only_sync_folder_props.sh"
+  else
+    echo "  filter_sync_only_folder_props.sh not found; running 06_to_sync_folder_props.sh as-is" >&2
+    run_script_if_exists "$B4_DIR" "06_to_sync_folder_props.sh"
+  fi
+else
+  echo "  Skipping 06_to_sync_folder_props.sh (not generated)."
+fi
 echo "[timing] Step 3 (before-upload reconciliation) completed in $(format_elapsed $STEP3_START)"
 
 # Step 4: Compare and reconcile (after-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports stay there
