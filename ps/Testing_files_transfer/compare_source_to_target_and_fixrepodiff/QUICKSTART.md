@@ -208,9 +208,116 @@ If sync completed successfully, pulls from the target should match what you had 
 
 ---
 
-## Verifying excluded files in comparison.db
+## Inspecting comparison.db
 
-The compare plugin uses **exclusion rules** (seeded in `03a-table-exclusion-rules.sql`) to skip certain paths during artifact sync (e.g. npm metadata `.json` files, maven `pom.xml`, checksum files). You can query `comparison.db` to see which source artifacts were excluded and confirm that all non-excluded files have been synced.
+After running `compare-and-reconcile.sh` (or `sync-target-from-source.sh`), the SQLite database `comparison.db` contains all crawled artifacts, exclusion rules, mappings, and comparison results. The queries below help you inspect the database and verify sync outcomes.
+
+> **Note:** Replace source/repo names as needed. Find your values with:
+> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
+
+### a) Exclusion rules
+
+List the path-based exclusion rules (seeded in `03a-table-exclusion-rules.sql`). Artifacts matching these patterns are skipped during sync:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT id, pattern, reason, enabled, priority
+FROM exclusion_rules
+ORDER BY priority, id;
+"
+```
+
+### b) Property exclusion rules
+
+List property-key exclusion rules (seeded in `03b-table-property-exclusion-rules.sql`). Properties matching these patterns are ignored during property comparison:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT id, pattern, reason, enabled, priority
+FROM property_exclusion_rules
+ORDER BY priority, id;
+"
+```
+
+### c) Cross-instance mapping
+
+Show how source and target repos are mapped (exact match, normalized match, or explicit sync):
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, source_repo, equivalence_key, target, target_repo,
+       match_type, sync_type, source_artifact_count, target_artifact_count
+FROM cross_instance_mapping;
+"
+```
+
+### d) Exclusion reasons (sample)
+
+Show the first 10 artifacts that were excluded or delayed, with the reason:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, repository_name, uri, reason, reason_category
+FROM comparison_reasons
+LIMIT 10;
+"
+```
+
+### e) Exclusion summary
+
+Count of excluded/delayed artifacts grouped by repo, source, and reason:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT repository_name, source, reason, total
+FROM exclusion_summary
+ORDER BY repository_name, source, reason;
+"
+```
+
+### f) Mismatch (sample)
+
+Show the first 10 artifact mismatches (checksum differences or missing on one side):
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT repo, src, dest, path, type, sha1_src, sha1_dest
+FROM mismatch
+LIMIT 10;
+"
+```
+
+### g) Mismatch summary
+
+Count of mismatches grouped by repo and type:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT repo, src, dest, type, count
+FROM mismatch_summary;
+"
+```
+
+### h) Missing artifacts (sample)
+
+Show the first 10 artifacts that exist on the source but are missing on the target:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, source_repo, target, target_repo, path, sha1_source, size_source
+FROM missing
+LIMIT 10;
+"
+```
+
+### Verifying excluded files
+
+The compare plugin uses **exclusion rules** (seeded in `03a-table-exclusion-rules.sql`) to skip certain paths during artifact sync (e.g. npm 
+metadata `.json` files, maven `pom.xml`, checksum files). You can query `comparison.db` to see which source artifacts were excluded and 
+confirm that all non-excluded files have been synced.
+
+> **Note:** Replace `psazuse` and `npmjs-remote-cache` with your source authority and repo name. You can find these values with:
+> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
 
 **Count of excluded files in the source repo:**
 
@@ -236,9 +343,6 @@ WHERE a.source = 'psazuse'
 ORDER BY a.uri;
 "
 ```
-
-> **Note:** Replace `psazuse` and `npmjs-remote-cache` with your source authority and repo name. You can find these values with:
-> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
 
 ---
 
