@@ -93,7 +93,7 @@ OUTPUT DIRECTORIES (default: under script directory):
   b4_upload/           Before-upload scripts (01–06) and their logs.
   after_upload/        After-upload scripts (07–09) and their logs.
 
-See README-sync-target-from-source.md for full documentation.
+See README.md for full documentation.
 EOF
   exit 0
 }

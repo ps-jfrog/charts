@@ -1,233 +1,182 @@
-# compare-and-reconcile.sh
+# sync-target-from-source.sh — One-shot sync workflow
 
-Compare artifacts between Nexus / Artifactory SH / Artifactory Cloud, optionally collect stats and properties, and generate **phased reconciliation scripts** for binaries, properties, and statistics. Uses `jf compare` (jfrog-cli-plugin-compare).
+This script automates **Steps 2 through 5** of [QUICKSTART.md](QUICKSTART.md): it runs the full compare-and-reconcile workflow (before-upload and after-upload) and executes all generated reconciliation scripts so that the **target Artifactory matches the source** in one invocation.
+
+**Step 1** (setting environment variables) is not automated: you must set the required env vars before running the script, or pass a config file with `--config <file>`.
+
+---
+
+## What the script does (mapping to QUICKSTART)
+
+| Script step | QUICKSTART step | Action |
+|-------------|-----------------|--------|
+| (you set env) | **Step 1** | Set COMPARE_*, SH_ARTIFACTORY_*, CLOUD_ARTIFACTORY_*, etc. (or use `--config`) |
+| Step 2 | **Step 2** | Run `compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only`; output in `b4_upload/`. Skipped with `--run-only`. With `--generate-only`, runs this step then exits. |
+| Step 3 | **Step 3** | Run before-upload scripts 01–06 via `runcommand_in_parallel_from_file.sh`. 01/02 skippable (`--skip-consolidation`); 04 skipped by default (`--run-delayed` to include). For 03/04: same-URL uses `jf rt cp`; different-URL groups by SHA1. For 06: filters out sync-only lines via `filter_sync_only_folder_props.sh`, running `06a` instead. |
+| Step 4 | **Step 4** | Run `compare-and-reconcile.sh --after-upload ...`; output in `after_upload/` |
+| Step 5 | **Step 5** | Run after-upload scripts 07, 08 via `runcommand_in_parallel_from_file.sh`. Script 09 is skipped by default; use `--run-folder-stats` to include it. |
+
+The script resolves its own directory so it can call `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly no matter where you run it from.
+
+**Same Artifactory URL (source and target on one instance):** When `SH_ARTIFACTORY_BASE_URL` and `CLOUD_ARTIFACTORY_BASE_URL` are equal (e.g. app2 → app3 on the same host), Step 3 does **not** run `03_to_sync.sh` (download from source then upload to target). Instead it runs [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) to generate `03_to_sync_using_copy.sh` from `03_to_sync.sh`, then runs `03_to_sync_using_copy.sh`, which uses `jf rt cp` so artifacts are copied server-side. The same applies to `04_to_sync_delayed.sh` when `--run-delayed` is used. If the converter script is missing, it falls back to grouped dl+upload (see below). See [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md).
+
+**Different Artifactory URLs (SHA1 deduplication):** When source and target are on different instances, Step 3 groups `03_to_sync.sh` (and `04_to_sync_delayed.sh` when `--run-delayed` is used) by SHA1 via [group_sync_by_sha1.sh](group_sync_by_sha1.sh) before running. Docker repos often share layers across tags, so the same blob may appear in many lines. Grouping downloads each unique SHA1 **once** and uploads it to all destinations, then cleans up — eliminating redundant downloads (typically 60–80% reduction) and preventing parallel-task race conditions on shared `/tmp` files. See [README-group_sync_by_sha1.md](README-group_sync_by_sha1.md).
+
+**Folder properties filtering (T19):** Before running `06_to_sync_folder_props.sh`, the script filters it through [filter_sync_only_folder_props.sh](filter_sync_only_folder_props.sh) to exclude lines that set **only** `sync.*` properties (e.g. `sync.created`, `sync.modifiedBy`). The filtered output is `06a_lines_other_than_only_sync_folder_props.sh`, which is then executed instead. Lines with at least one user-defined property (e.g. `folder-color=red`) are kept. This avoids running no-op sync-metadata commands on repos with thousands of folders. If `filter_sync_only_folder_props.sh` is not found, the script falls back to running `06` as-is.
+
+**Timing:** The script reports elapsed time for each generated script, each step (Steps 2–5), and the overall run. Timing lines appear as `[timing] <name> completed in Xm Ys`.
+
+---
 
 ## Prerequisites
 
-- **JFrog CLI** with the compare plugin (`jf compare`).
-- **CLI profiles** for Artifactory (e.g. `app1`, `app2`) configured.
-- For Nexus source: `NEXUS_ADMIN_TOKEN` or `NEXUS_ADMIN_USERNAME` / `NEXUS_ADMIN_PASSWORD`; if using a repo list file, `NEXUS_RUN_ID`.
-- **sqlite3** (optional): for CSV mismatch report.
-- **jq** (required if using `--reconcile`): to generate reconciliation shell scripts.
+- Same as [QUICKSTART.md](QUICKSTART.md): JFrog CLI with compare plugin, CLI profiles for source and target (e.g. `app1`, `app2`), `jq`.
+- **Supported scenario:** Case a (Artifactory SH → Artifactory Cloud). Other scenarios are not yet supported by this one-shot script.
 
-## Quick start
+---
 
-1. Set scenario and required env vars (same as [compare-artifacts.sh](../compare_source_to_target/compare-artifacts.sh)).
-2. Optionally set `ARTIFACTORY_REPOS="repo1,repo2"` (or `CLOUD_ARTIFACTORY_REPOS` / `SH_ARTIFACTORY_REPOS` for the target side).
-3. Run compare only:
-   ```bash
-   ./compare-and-reconcile.sh
-   ```
-4. Or compare + collect stats/properties + generate reconcile scripts (one-way to target only):
-   ```bash
-   ./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
-   ```
+## Usage
 
-## Minimal command checklist
+### Step 1: Set environment variables
 
-1. Set scenario env vars (Case a/b/c), plus optional `ARTIFACTORY_REPOS`.
-2. For binaries + properties + statistics reconciliation:
-   ```bash
-   export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
-   ./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
-   ```
-3. Run **before-upload** compare, then run scripts 01–06 (see [QUICKSTART.md](QUICKSTART.md) for full steps):
-   ```bash
-   ./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
-   # Then run 01–02 if consolidation needed; then 03, 04 (optional), 05, 06
-   ./03_to_sync.sh             # binaries: sync to target
-   ./04_to_sync_delayed.sh     # optional: delayed binaries (e.g. manifest.json)
-   ./05_to_sync_stats.sh       # file stats (checksum deploy)
-   ./06_to_sync_folder_props.sh
-   ```
-4. Run **after-upload** compare, then run scripts 07–09:
-   ```bash
-   ./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
-   ./07_to_sync_download_stats.sh
-   ./08_to_sync_props.sh
-   ./09_to_sync_folder_stats_as_properties.sh
-   ```
-
-## Options
-
-| Option | Description |
-|--------|-------------|
-| `--collect-stats-properties` | After compare, run `jf compare list` with `--collect-stats --collect-properties` on the target. In Case a (SH→Cloud), also runs `jf compare list` with `--collect-properties` on the source (SH) so property sync views use source=SH, target=Cloud and scripts 06/08 can be non-empty. **Only valid when `ARTIFACTORY_DISCOVERY_METHOD=artifactory_aql`.** |
-| `--reconcile` | After compare (and optional collect), generate the phased reconciliation scripts (`01_to_consolidate.sh` … `09_to_sync_folder_stats_as_properties.sh`) in the current directory (or `RECONCILE_OUTPUT_DIR`). Scripts are numbered in run order. **Before-upload** (`--b4upload`): 01–06. **After-upload** (`--after-upload`): 07–09 (and 01–02 for consistency). |
-| `--target-only` | With `--reconcile`: keep only commands that update the **target** instance (e.g. app2). One-way sync so that target matches source; commands that would update the source are dropped. When `CLOUD_ARTIFACTORY_REPOS` or `ARTIFACTORY_REPOS` is set, generated scripts are also restricted to those repos only. |
-| `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). If not set, uses the default repo-based crawl. Useful for large repos. Also settable via env `COMPARE_AQL_STYLE`. |
-| `--include-remote-cache` | Include remote-cache repos (e.g. `npmjs-remote-cache`) in the crawl. Required when `--repos` names a remote-cache repo; without it the plugin's repo-type filter silently excludes them. Also settable via env `COMPARE_INCLUDE_REMOTE_CACHE=1`. |
-| `-h`, `--help` | Show help. |
-
-**Environment:**  
-`COLLECT_STATS_PROPERTIES=1` and `RECONCILE=1` are equivalent to the flags above.  
-`RECONCILE_TARGET_ONLY=1` is equivalent to `--target-only`.  
-`RECONCILE_OUTPUT_DIR=<dir>` sets where `to_*.sh` are written (default: current directory).  
-`COMPARE_AQL_STYLE=<style>` is equivalent to `--aql-style` (e.g. `sha1-prefix`).  
-`COMPARE_INCLUDE_REMOTE_CACHE=1` is equivalent to `--include-remote-cache`.
-
-## Scenarios and repository scope
-
-- **Case a)** Artifactory SH → Artifactory Cloud: set `COMPARE_SOURCE_NEXUS=0`, `COMPARE_TARGET_ARTIFACTORY_SH=1`, `COMPARE_TARGET_ARTIFACTORY_CLOUD=1` and the four Artifactory URL/authority vars. Target for reconcile = Cloud.
-- **Case b)** Nexus → Artifactory Cloud: set `COMPARE_SOURCE_NEXUS=1`, `COMPARE_TARGET_ARTIFACTORY_SH=0`, `COMPARE_TARGET_ARTIFACTORY_CLOUD=1` and Nexus + Cloud vars. Target = Cloud.
-- **Case c)** Nexus → Artifactory SH: set `COMPARE_SOURCE_NEXUS=1`, `COMPARE_TARGET_ARTIFACTORY_SH=1`, `COMPARE_TARGET_ARTIFACTORY_CLOUD=0` and Nexus + SH vars. Target = SH.
-
-**Repositories:**  
-- Use **`ARTIFACTORY_REPOS`** to limit the **target** side (and, in Case a, both SH and Cloud when you want the same list).  
-- Or use **`SH_ARTIFACTORY_REPOS`** / **`CLOUD_ARTIFACTORY_REPOS`** to limit per instance (e.g. different lists for SH vs Cloud in Case a).  
-- If none are set, **all** repositories are compared and reconciled.
-
-## Step-by-step: full binaries, properties, and statistics reconciliation
-
-Follow this workflow to compare, then reconcile **binaries**, **properties**, and **statistics** for specific repos or all repos.
-
-### Step 1: Set scenario and credentials
-
-Choose Case a, b, or c and set the required environment variables (see [compare_source_to_target/README.md](../compare_source_to_target/README.md) or `./compare-and-reconcile.sh --help`).
-
-Example for **Case a** (Artifactory SH → Cloud):
+Set the same variables as in QUICKSTART Step 1. Example for Artifactory SH → Cloud:
 
 ```bash
 export COMPARE_SOURCE_NEXUS="0"
 export COMPARE_TARGET_ARTIFACTORY_SH="1"
 export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"
-export SH_ARTIFACTORY_BASE_URL="http://source.example.com/artifactory/"
+export SH_ARTIFACTORY_BASE_URL="http://<source-host>/artifactory/"
 export SH_ARTIFACTORY_AUTHORITY="app1"
-export CLOUD_ARTIFACTORY_BASE_URL="http://target.example.com/artifactory/"
+export CLOUD_ARTIFACTORY_BASE_URL="http://<target-host>/artifactory/"
 export CLOUD_ARTIFACTORY_AUTHORITY="app2"
-```
-
-### Step 2: (Optional) Restrict to specific repositories
-
-To reconcile only certain repos on the **target**:
-
-```bash
-export ARTIFACTORY_REPOS="docker-local,maven-releases"
-```
-
-Or, for Case a, you can set different lists per side:
-
-```bash
-export SH_ARTIFACTORY_REPOS="repo-a,repo-b"
-export CLOUD_ARTIFACTORY_REPOS="repo-a,repo-b"
-```
-
-**Different source and target repo names (Case a):** When source and target repos have different names (e.g. source `sv-docker-local`, target `sv-docker-local-copy`), set both `SH_ARTIFACTORY_REPOS` and `CLOUD_ARTIFACTORY_REPOS` with the **same number** of comma-separated repos; they are paired by order (first source with first target, etc.). The script runs `jf compare sync-add` for each pair so Phase 2 reports and reconciliation scripts use the correct mapping. Optional: `COMPARE_SYNC_TYPE` (default `other`) sets the sync type. See [phased-reconciliation-guide.md](../../../../jfrog-cli-plugin-compare/docs/phased-reconciliation-guide.md) section "Different source and target repo names".
-
-Leave these unset to compare and reconcile **all** repositories.
-
-### Step 3: Use AQL discovery for stats/properties and reconciliation
-
-For **properties** and **statistics** reconciliation you need stats and properties collected on the target. That is only supported with AQL discovery:
-
-```bash
 export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
+
+# Optional: limit to specific repos
+export SH_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
+export CLOUD_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
 ```
 
-Use `artifactory_filelist` only if you need a fast compare for binaries and do **not** need `--collect-stats-properties` or full stats/properties reconciliation.
+### Run the script
 
-### Step 4: Run compare and generate reconciliation scripts
-
-Run the script with **`--b4upload`** or **`--after-upload`**, plus **collect-stats/properties** and **reconcile**:
-
-1. Source and target are crawled and compared (binaries).
-2. Stats and properties are collected on the **target** (required for properties and statistics reconciliation).
-3. The corresponding set of reconciliation scripts is generated (01–06 for before-upload, 07–09 for after-upload).
-
-**Before-upload** (sync binaries, stats, folder props):
+From the **compare_source_to_target_and_fixrepodiff** directory (or anywhere, as long as env vars are set):
 
 ```bash
-./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
+./sync-target-from-source.sh
 ```
 
-**After-upload** (download stats, properties, folder stats as properties) — run after binaries are on the target:
+Or with a config file that exports the variables above:
 
 ```bash
-./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
+./sync-target-from-source.sh --config /path/to/env.sh
 ```
 
-Outputs:
+**Example config files** in `config_env_examples/`:
 
-- **Report:** `report-<scenario>-<timestamp>.csv` (mismatches from `comparison.db`).
-- **Scripts** (in current directory or `RECONCILE_OUTPUT_DIR`), numbered in run order. You must use **`--b4upload`** or **`--after-upload`** so the correct set is generated; see [QUICKSTART.md](QUICKSTART.md).
+| File | Use case |
+|------|----------|
+| `env_app1_app2_diff_jpds_same_repo_names.sh` | Different Artifactory instances (app1 → app2); **same repo names** on both sides. |
+| `env_app1_app2_diff_jpds_diff_repos.sh` | Different instances (app1 → app2); **different repo names** (e.g. `sv-docker-local` → `sv-docker-local-copy`). |
+| `env_app2_app3_same_jpd_different_repos.sh` | Same instance (app2 → app3); **different repo names** per pair. |
+| `env_app2_app3_same_jpd_different_repos_test_underscore.sh` | Same instance; target repos use `_` prefix naming convention. |
+| `env_app2_app3_same_jpd_different_repos_test_one_underscore.sh` | Same instance; target repos use single `_` prefix naming convention. |
+| `env_app2_app3_same_jpd_different_repos_npm_folder-crawl.sh` | Same instance; **npm remote-cache** repos, default (folder) crawl. Use with `--include-remote-cache`. |
+| `env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh` | Same instance; **npm remote-cache** repos, sha1-prefix crawl. Use with `--include-remote-cache --aql-style sha1-prefix`. |
 
-  **Before-upload** (`--b4upload`): 01–06  
-  - `01_to_consolidate.sh` — Phase 1: consolidate abnormal repos to normalized repos (same instance).  
-  - `02_to_consolidate_props.sh` — Phase 1: properties consolidation.  
-  - `03_to_sync.sh` — Phase 2: sync binaries to target (non-delayed only).  
-  - `04_to_sync_delayed.sh` — Phase 2: sync delayed artifacts (e.g. list.manifest.json, manifest.json).  
-  - `05_to_sync_stats.sh` — File statistics (X-Artifactory headers / checksum deploy).  
-  - `06_to_sync_folder_props.sh` — Folder properties sync to target.
+Copy one as a template, edit URLs, authorities, and repo lists, then run with `--config <your-file>.sh`.
 
-  **After-upload** (`--after-upload`): 07–09 (and 01–02 for consistency, often empty)  
-  - `07_to_sync_download_stats.sh` — Download stats (downloadCount, lastDownloaded, lastDownloadedBy) via `:statistics` endpoint.  
-  - `08_to_sync_props.sh` — Properties sync to target.  
-  - `09_to_sync_folder_stats_as_properties.sh` — Folder stats as sync.* custom properties on folders.
+### Recommended workflow: two-pass with verification
 
-**Flow:** Run compare with `--b4upload` → run 01–06. After uploading, run compare with `--after-upload` → run 07–09. See [QUICKSTART.md](QUICKSTART.md).
-
-### Step 5: Run reconciliation in order (before-upload → after-upload)
-
-Execute the generated scripts in numeric order. Use **two compare runs**: first **before-upload** (generates 01–06), then after binaries/stats are on the target, **after-upload** (generates 07–09). See [QUICKSTART.md](QUICKSTART.md) for the full flow.
-
-**Before-upload run** — Generate and run 01–06:
+The recommended usage is the **two-pass** approach — generate scripts, review them, then execute — followed by a verification run into a separate output directory to confirm convergence:
 
 ```bash
-./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
+# Pass 1: generate before-upload scripts (01–06) for review
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --generate-only --include-remote-cache --aql-style sha1-prefix
+
+# Pass 2: execute generated scripts, run after-upload compare, and run 07–09
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix
+
+# Verification: re-run into a separate output dir to confirm convergence
+# (use a config with a different RECONCILE_BASE_DIR, e.g. pointing to a run2 directory)
+bash sync-target-from-source.sh \
+  --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --generate-only --include-remote-cache --aql-style sha1-prefix
+
+bash sync-target-from-source.sh \
+  --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix
 ```
 
-**Phase 1 – Consolidate (if needed)**  
-Fixes abnormal repo layout on the same instance before cross-instance sync.
+After the verification run, the generated scripts (`03_to_sync.sh`, `05_to_sync_stats.sh`, etc.) should have zero or near-zero lines, confirming that source and target are in sync.
 
-```bash
-./01_to_consolidate.sh
-./02_to_consolidate_props.sh
-```
-
-**Phase 2 – Sync binaries, delayed, stats, folder props**  
-Run in output dir (e.g. `b4_upload/`) with `runcommand_in_parallel_from_file.sh` or directly:
-
-```bash
-./03_to_sync.sh             # binaries: sync to target
-./04_to_sync_delayed.sh     # optional: delayed artifacts (e.g. manifest.json)
-./05_to_sync_stats.sh       # file stats (checksum deploy)
-./06_to_sync_folder_props.sh
-```
-
-**After-upload run** — Generate and run 07–09:
-
-```bash
-./compare-and-reconcile.sh --after-upload --collect-stats-properties --reconcile --target-only
-```
-
-Then in the after-upload output dir:
-
-```bash
-./07_to_sync_download_stats.sh
-./08_to_sync_props.sh
-./09_to_sync_folder_stats_as_properties.sh
-```
-
-If any script is empty (no commands), there is nothing to reconcile for that phase.
-
-### Step 6: (Optional) Inspect the CSV report
-
-Open the timestamped CSV report to see which paths had mismatches and confirm that the reconciled scope matches your chosen repositories (specific repos or all).
+> **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands.
 
 ---
 
-## Summary: what each phase reconciles
+## Options
 
-| Phase | Scripts | What is reconciled |
-|-------|---------|---------------------|
-| **Phase 1** | `01_to_consolidate.sh`, `02_to_consolidate_props.sh` | Binaries and properties that need to be consolidated from abnormal to normalized repos on the **same** instance. |
-| **Phase 2 (before-upload)** | `03_to_sync.sh`, `04_to_sync_delayed.sh`, `05_to_sync_stats.sh`, `06_to_sync_folder_props.sh` | Binaries synced to target (03, 04), file stats / checksum deploy (05), folder properties (06). Generated with `--b4upload`. |
-| **After-upload** | `07_to_sync_download_stats.sh`, `08_to_sync_props.sh`, `09_to_sync_folder_stats_as_properties.sh` | Download stats, properties sync, folder stats as properties. Generated with `--after-upload`. |
+| Option | Description |
+|--------|-------------|
+| `--config <file>` | Source `<file>` before running (e.g. a script that exports COMPARE_* and repo vars). |
+| `--generate-only` | Run before-upload compare (Step 2) to generate scripts 01–06 but do **not** execute any of them. Prints a summary and exits. Use `--run-only` later to execute. Mutually exclusive with `--run-only`. |
+| `--run-only` | Skip before-upload compare (Step 2); execute previously generated scripts (Steps 3–5). The output directory must already contain scripts from a prior `--generate-only` run. Mutually exclusive with `--generate-only`. |
+| `--skip-consolidation` | Do not run `01_to_consolidate.sh` or `02_to_consolidate_props.sh`. |
+| `--run-delayed` | Run `04_to_sync_delayed.sh`. By default it is skipped (delayed manifests are often created by the stats sync). |
+| `--run-folder-stats` | Run `09_to_sync_folder_stats_as_properties.sh` in the after-upload phase (default: skip). |
+| `--max-parallel <N>` | Max concurrent commands when running reconciliation scripts (default: 10). |
+| `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_STYLE`. |
+| `--include-remote-cache` | Include remote-cache repos (e.g. `npmjs-remote-cache`) in the crawl. Required when repos are remote-cache type; without it they are silently excluded. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_INCLUDE_REMOTE_CACHE=1`. |
+| `-h`, `--help` | Show usage and exit. |
 
-The exact behavior of each view and command comes from the **jfrog-cli-plugin-compare** plugin. For view names and details, refer to that plugin’s documentation.
+---
 
-## See also
+## Output directories
 
-- [plan.md](plan.md) — Implementation tasks and workflow reference.
-- [compare_source_to_target/compare-artifacts.sh](../compare_source_to_target/compare-artifacts.sh) — Compare-only script and env var reference.
-- **jfrog-cli-plugin-compare** — Source for `jf compare` report views and reconciliation commands.
+By default, both before-upload and after-upload outputs live under the **script’s directory**:
+
+- **`b4_upload/`** — Before-upload scripts (01–06) and their success/failure logs.
+- **`after_upload/`** — After-upload scripts (07–09) and their logs.
+
+To use a different base directory (e.g. your project folder):
+
+```bash
+export RECONCILE_BASE_DIR="/path/to/my/project"
+./sync-target-from-source.sh
+```
+
+Then scripts and logs are under `/path/to/my/project/b4_upload/` and `/path/to/my/project/after_upload/`.
+
+---
+
+## Command audit logs
+
+Each run of **compare-and-reconcile.sh** writes a **command-audit log** (e.g. `compare-and-reconcile-command-audit-YYYYMMDD-HHMMSS.log`) listing every `jf compare` command executed: init, authority-add, credentials-add, list (per side), optional sync-add (when source and target repo names differ), and report. Use these logs to verify the sequence and to replay or debug.
+
+**Example audit log directories** in this repo (for reference only; paths and timestamps will differ when you run locally):
+
+| Directory | Scenario | What the audit shows |
+|-----------|----------|----------------------|
+| **compare-and-reconcile-command-audit-diff_jpds_same_repo_names/** | Different Artifactory instances (app1 → app2), **same repo names** on both sides | init, authority-add and list for app1 and app2 with the same `--repos=...`, then report commands. No `sync-add` because repo names match. |
+| **compare-and-reconcile-command-audit-same_jpd_diff_repo_names/** | Same Artifactory instance (app2 → app3), **different repo names** (e.g. `sv-docker-local` → `sv-docker-local-copy`) | init, authority-add, list for each side with their own repo lists, then **sync-add** for each source→target repo pair, then report commands. |
+
+When using **sync-target-from-source.sh**, the before-upload run writes its audit log under your output base (e.g. `b4_upload/` or `RECONCILE_BASE_DIR/b4_upload/`); the after-upload run writes a separate audit log (e.g. under `after_upload/`). Log file names are printed at the start of each compare-and-reconcile run.
+
+---
+
+## After the script finishes
+
+- Inspect failure logs in `b4_upload/*_out.txt` and `after_upload/*_out.txt` for any failed commands.
+- Verify from the target (e.g. **QUICKSTART.md Step 6**): Docker insecure registries, `docker login`, `docker pull` from the target.
+
+---
+
+## Relation to manual QUICKSTART
+
+- **Manual:** You run Steps 1–5 yourself (set env, run compare-and-reconcile twice, run each generated script with `runcommand_in_parallel_from_file.sh`).
+- **Two-pass:** Use `--generate-only` to generate scripts, review them, then `--run-only` to execute.
+- **One-shot:** You set env (or `--config`) once and run `./sync-target-from-source.sh`; it performs Steps 2–5 for you.
+
+For more control (e.g. running only some scripts or changing order), use the manual flow in [QUICKSTART.md](QUICKSTART.md).

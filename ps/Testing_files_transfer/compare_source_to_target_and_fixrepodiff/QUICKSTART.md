@@ -352,7 +352,7 @@ ORDER BY a.uri;
 |--------|--------|
 | **compare-and-reconcile.sh** | Compare source vs target and generate reconciliation scripts. Requires **--b4upload** or **--after-upload**. |
 | **runcommand_in_parallel_from_file.sh** | Run commands from a file in parallel; `--log-success` logs successful commands; args: `<command_file> <failure_log_file> <max_parallel>`. |
-| **sync-target-from-source.sh** | One-shot: run Steps 2–5 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09). Set env vars (Step 1) then run; see [README-sync-target-from-source.md](README-sync-target-from-source.md). |
+| **sync-target-from-source.sh** | One-shot: run Steps 2–5 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09). Set env vars (Step 1) then run; see [README.md](README.md). |
 
 ---
 
@@ -364,7 +364,7 @@ To run the full sync without executing each step manually, set the required envi
 ./sync-target-from-source.sh
 ```
 
-Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README-sync-target-from-source.md](README-sync-target-from-source.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README.md](README.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
 
 ### Two-pass workflow: generate, review, then execute
 

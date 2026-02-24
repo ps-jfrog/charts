@@ -76,5 +76,5 @@ Or from **sync-target-from-source.sh**: when both Artifactory URLs are the same,
 
 ## See also
 
-- [README-sync-target-from-source.md](README-sync-target-from-source.md) — One-shot workflow; uses this converter when source and target URLs are the same.
+- [README.md](README.md) — One-shot workflow; uses this converter when source and target URLs are the same.
 - [convert_dl_upload_to_rt_cp.sh](convert_dl_upload_to_rt_cp.sh) — The script itself.

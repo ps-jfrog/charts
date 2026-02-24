@@ -77,6 +77,6 @@ If one upload fails in the `&&` chain, the remaining uploads for that SHA1 are s
 
 ## See also
 
-- [README-sync-target-from-source.md](README-sync-target-from-source.md) — One-shot workflow; uses this grouper automatically.
+- [README.md](README.md) — One-shot workflow; uses this grouper automatically.
 - [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md) — Converter for same-Artifactory (jf rt cp); used instead of grouping when source and target URLs are identical.
 - [README-runcommand_in_parallel_from_file.md](README-runcommand_in_parallel_from_file.md) — Parallel runner docs.

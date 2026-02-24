@@ -72,7 +72,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - The script must resolve its own directory so it can invoke `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly regardless of the user's current working directory when invoked.
   - Document in plan and (when implemented) in README/QUICKSTART how to run this one-shot script and how it maps to the manual Steps 1–5. No code changes beyond adding this task until implementation.
 
-**Implemented:** Script [sync-target-from-source.sh](sync-target-from-source.sh) and [README-sync-target-from-source.md](README-sync-target-from-source.md). Step 1 is via env vars or `--config <file>`; output dirs default to `<script_dir>/b4_upload` and `<script_dir>/after_upload` (override with `RECONCILE_BASE_DIR`). Options: `--skip-consolidation`, `--skip-delayed`, `--max-parallel N`. Currently supports Case a (Artifactory SH → Cloud) only.
+**Implemented:** Script [sync-target-from-source.sh](sync-target-from-source.sh) and [README.md](README.md). Step 1 is via env vars or `--config <file>`; output dirs default to `<script_dir>/b4_upload` and `<script_dir>/after_upload` (override with `RECONCILE_BASE_DIR`). Options: `--skip-consolidation`, `--skip-delayed`, `--max-parallel N`. Currently supports Case a (Artifactory SH → Cloud) only.
 
 ### 1.6 Different source and target repo names (same or cross-instance)
 
@@ -172,7 +172,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   bash sync-target-from-source.sh --config env.sh --run-only --run-delayed --run-folder-stats
   ```
 
-  - Update help text in `sync-target-from-source.sh`, and document in `README-sync-target-from-source.md` and `QUICKSTART.md`.
+  - Update help text in `sync-target-from-source.sh`, and document in `README.md` and `QUICKSTART.md`.
 
 **Implemented:** Added `--generate-only`, `--run-only`, and `--run-folder-stats` CLI flags with mutual-exclusion validation. `--generate-only` runs Step 2 then prints script summary and exits. `--run-only` skips Step 2, validates output dir exists, then executes Steps 3–5. `09_to_sync_folder_stats_as_properties.sh` is skipped unless `--run-folder-stats` is provided. Help text updated.
 
@@ -182,10 +182,10 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - **compare-and-reconcile.sh:** Accept `--include-remote-cache` CLI option; also read from env `COMPARE_INCLUDE_REMOTE_CACHE`. Build a flag string (e.g. `INCLUDE_REMOTE_CACHE_FLAG="--include-remote-cache"`) and append to all active `jf compare list` calls. If not set, no flag is passed (default: only LOCAL/FEDERATED repos).
   - **sync-target-from-source.sh:** Accept `--include-remote-cache` CLI option; pass through to `compare-and-reconcile.sh` via env `COMPARE_INCLUDE_REMOTE_CACHE` or CLI arg.
   - **Config env files:** Optionally set `COMPARE_INCLUDE_REMOTE_CACHE=1`.
-  - **Documentation:** Update help text in both scripts, and document in `README.md`, `README-sync-target-from-source.md`, and `QUICKSTART.md`.
+  - **Documentation:** Update help text in both scripts, and document in `README-compare-and-reconcile.md`, `README.md`, and `QUICKSTART.md`.
   - **Background:** The compare plugin (`aql.go` line 462) filters repos by type: only `LOCAL`, `FEDERATED`, `VIRTUAL` (if `--include-virtual`), and `REMOTE` (if `--include-remote` or `--include-remote-cache`) are included. The default folder-based crawl iterates `allowedRepos` — if the repo is filtered out, nothing is crawled. The sha1-prefix style accidentally works around this because an empty `allowedRepos` omits the repo filter from the AQL query, querying all repos on the server.
 
-  **Implemented:** Added `--include-remote-cache` CLI flag and `COMPARE_INCLUDE_REMOTE_CACHE` env variable to both `compare-and-reconcile.sh` and `sync-target-from-source.sh`. The flag is appended to all `jf compare list` calls. Help text updated in both scripts. Documentation updated in `README.md`, `README-sync-target-from-source.md`, and `QUICKSTART.md` (including example commands for npm remote-cache configs).
+  **Implemented:** Added `--include-remote-cache` CLI flag and `COMPARE_INCLUDE_REMOTE_CACHE` env variable to both `compare-and-reconcile.sh` and `sync-target-from-source.sh`. The flag is appended to all `jf compare list` calls. Help text updated in both scripts. Documentation updated in `README-compare-and-reconcile.md`, `README.md`, and `QUICKSTART.md` (including example commands for npm remote-cache configs).
 
 ### 1.11 Timing report for sync-target-from-source.sh
 

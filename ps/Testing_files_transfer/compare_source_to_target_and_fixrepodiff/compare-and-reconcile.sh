@@ -5,7 +5,7 @@ set -euo pipefail
 # ============================================================================
 # Compare and Reconcile: compare artifacts and optionally generate reconciliation scripts
 # Extends compare-artifacts.sh with --collect-stats/--collect-properties and phased reconciliation.
-# See plan.md and README.md in this directory.
+# See plan.md and README-compare-and-reconcile.md in this directory.
 # ============================================================================
 
 # Comparison flags (0 = false, 1 = true)
