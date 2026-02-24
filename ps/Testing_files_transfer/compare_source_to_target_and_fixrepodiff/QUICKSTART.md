@@ -275,6 +275,20 @@ ORDER BY repository_name, source, reason;
 "
 ```
 
+Example output:
+
+```
+repository_name       source  reason                  total
+--------------------  ------  ----------------------  -----
+__infra_local_docker  app2                            167
+__infra_local_docker  app2    delay: docker           24
+__infra_local_docker  app2    managed by artifactory  1
+sv-docker-local-copy  app3                            2
+sv-docker-local-copy  app3    managed by artifactory  1
+```
+
+Rows with an empty `reason` are artifacts that passed exclusion rules (eligible for sync). Rows with a reason like `delay: docker` or `managed by artifactory` show why those artifacts were excluded or delayed.
+
 ### f) Mismatch (sample)
 
 Show the first 10 artifact mismatches (checksum differences or missing on one side):
@@ -287,6 +301,22 @@ LIMIT 10;
 "
 ```
 
+Example output:
+
+```
+repo                  src   dest  path                                                                                    type     sha1_src                                  sha1_dest
+--------------------  ----  ----  --------------------------------------------------------------------------------------  -------  ----------------------------------------  ---------
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__03c175d7318206e9aa5a552067b4d93ab7b633b8f...    missing  a7cb68f731b9431533434cbd3fb0ad611e31dfdd
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__2ad3d7da4ab4a72ec01ccc2a9348190f15d854e3c...    missing  856aa8bce7faf61cd5fba73e2ade948fd74d0d65
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__3e4d8beb5aa0128090970a8173fa17efeb13ac158...    missing  c61fae9bb9dc0a1546c0eeac8f1a6d2de5db4947
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__61573f02fa22c37f2a927ae9483828ef6ed760a27...    missing  26f772b9f62ddb043099a94f4e3a4e1d1864d9e6
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__655323dc8685f08fde23ccc023a50c074587f8a97...    missing  c00b47a31e0b198956b0133a6ac15e71b880c57d
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__6b59a28fa20117e6048ad0616b8d8c901877ef15f...    missing  da8a56d5932e776f75f1b1ea16080d7e441e6bde
+__infra_local_docker  app2  app3  /app-core-infra/app-core/101.1.0/sha256__6b62de4a261f20bba730c...                       missing  ...
+```
+
+The `type` column shows `missing` for artifacts on the source but absent on the target. An empty `sha1_dest` confirms the artifact does not exist on the target side.
+
 ### g) Mismatch summary
 
 Count of mismatches grouped by repo and type:
@@ -298,6 +328,16 @@ FROM mismatch_summary;
 "
 ```
 
+Example output:
+
+```
+repo                  src   dest  type     count
+--------------------  ----  ----  -------  -----
+__infra_local_docker  app2  app3  missing  136
+```
+
+> **Note:** Files marked for delay (e.g. Docker manifests) are excluded from the mismatch count. The count here reflects only non-delayed artifacts that are missing on the target. Use `--run-delayed` to sync delayed artifacts separately.
+
 ### h) Missing artifacts (sample)
 
 Show the first 10 artifacts that exist on the source but are missing on the target:
@@ -308,6 +348,17 @@ SELECT source, source_repo, target, target_repo, path, sha1_source, size_source
 FROM missing
 LIMIT 10;
 "
+```
+
+Example output:
+
+```
+source  source_repo           target  target_repo           path                                                                                    sha1_source                               size_source
+------  --------------------  ------  --------------------  --------------------------------------------------------------------------------------  ----------------------------------------  -----------
+app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__03c175d7318206e9aa5a552067b4d93ab7b633b8f...    a7cb68f731b9431533434cbd3fb0ad611e31dfdd  3146944
+app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__2ad3d7da4ab4a72ec01ccc2a9348190f15d854e3c...    856aa8bce7faf61cd5fba73e2ade948fd74d0d65  1062
+app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__3e4d8beb5aa0128090970a8173fa17efeb13ac158...    c61fae9bb9dc0a1546c0eeac8f1a6d2de5db4947  167
+app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__61573f02fa22c37f2a927ae9483828ef6ed760a27...    26f772b9f62ddb043099a94f4e3a4e1d1864d9e6  3146941
 ```
 
 ### Verifying excluded files
