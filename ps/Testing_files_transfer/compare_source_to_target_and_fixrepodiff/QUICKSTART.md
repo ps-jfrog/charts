@@ -227,6 +227,25 @@ ORDER BY priority, id;
 "
 ```
 
+Example output:
+
+```
+id  pattern              reason                  enabled  priority
+--  -------------------  ----------------------  -------  --------
+12  /.jfrog/%            managed by artifactory  1        10
+1   /.pypi/%.html        python metadata         1        100
+2   /.npm/%.json         npm metadata            1        100
+3   %maven-metadata.xml  maven metadata          1        100
+4   %pom.xml             maven metadata          1        100
+5   %.pom                maven metadata          1        100
+6   %.md5                checksum metadata       1        100
+7   %.sha1               checksum metadata       1        100
+8   %.sha2               checksum metadata       1        100
+9   %.sha256             checksum metadata       1        100
+10  %.sha512             checksum metadata       1        100
+11  %_uploads/%          docker temporary files  1        100
+```
+
 ### b) Property exclusion rules
 
 List property-key exclusion rules (seeded in `03b-table-property-exclusion-rules.sql`). Properties matching these patterns are ignored during property comparison:
@@ -237,6 +256,20 @@ SELECT id, pattern, reason, enabled, priority
 FROM property_exclusion_rules
 ORDER BY priority, id;
 "
+```
+
+Example output:
+
+```
+id  pattern          reason                                                                      enabled  priority
+--  ---------------  --------------------------------------------------------------------------  -------  --------
+1   sync.%           folder statistics metadata - stored for auditing, excluded from comparison  1        10
+2   sync.created     folder created timestamp                                                    1        10
+3   sync.createdBy   folder created by user                                                      1        10
+4   sync.modified    folder modified timestamp                                                   1        10
+5   sync.modifiedBy  folder modified by user                                                     1        10
+6   artifactory.%    artifactory internal properties                                             1        50
+7   docker.%         docker internal properties                                                  1        50
 ```
 
 ### c) Cross-instance mapping
@@ -251,6 +284,16 @@ FROM cross_instance_mapping;
 "
 ```
 
+Example output:
+
+```
+source  source_repo           equivalence_key       target  target_repo           match_type     sync_type  source_artifact_count  target_artifact_count
+------  --------------------  --------------------  ------  --------------------  -------------  ---------  ---------------------  ---------------------
+app2    __infra_local_docker  __infra_local_docker  app3    sv-docker-local-copy  explicit_sync  other      192                    3
+```
+
+The `match_type` shows how the repos were paired: `exact_match` (same name), `normalized_match` (names differ only by prefix/suffix), or `explicit_sync` (manually mapped via `jf compare sync-add`).
+
 ### d) Exclusion reasons (sample)
 
 Show the first 10 artifacts that were excluded or delayed, with the reason:
@@ -262,6 +305,21 @@ FROM comparison_reasons
 LIMIT 10;
 "
 ```
+
+Example output:
+
+```
+source  repository_name       uri                                                                                             reason                  reason_category
+------  --------------------  ----------------------------------------------------------------------------------------------  ----------------------  ---------------
+app2    __infra_local_docker  /.jfrog/repository.catalog                                                                      managed by artifactory  exclude
+app3    sv-docker-local-copy  /.jfrog/repository.catalog                                                                      managed by artifactory  exclude
+app2    __infra_local_docker  /jolly-unicorn/sha256:00e6dac3081d84df66de98d3931fbe7c2a3ade86cb52560c3c2b54b5d7f100eb/mani...    delay: docker           delay
+app2    __infra_local_docker  /jolly-unicorn/sha256:2551813737ee48e8cddd9acc10a29d69c450577b75dc072e3b511e1d2a412120/mani...    delay: docker           delay
+app2    __infra_local_docker  /jolly-unicorn/sha256:5ce63a8aeae5814412b549ec6ad7d6c5b999cf59560e4eb77566b8d3360b89c3/mani...    delay: docker           delay
+app2    __infra_local_docker  /jolly-unicorn/sha256:84c7478b29c069870f0f867ee58a2dfb895f64920973ed2b77bb92bdcfb5269a/mani...    delay: docker           delay
+```
+
+The `reason_category` is `exclude` for artifacts skipped entirely (e.g. `.jfrog/` internal files) or `delay` for artifacts deferred to a later phase (e.g. Docker manifests synced via `04_to_sync_delayed.sh`).
 
 ### e) Exclusion summary
 
