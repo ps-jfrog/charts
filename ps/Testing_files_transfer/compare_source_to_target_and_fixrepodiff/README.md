@@ -54,7 +54,12 @@ export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
 # Optional: limit to specific repos
 export SH_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
 export CLOUD_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
+
+# Optional: where to put b4_upload/ and after_upload/ (default: script directory)
+export RECONCILE_BASE_DIR="/path/to/my/output"
 ```
+
+> **Recommendation:** Use an **absolute path** for `RECONCILE_BASE_DIR` to avoid ambiguity, especially in the two-pass workflow (`--generate-only` then `--run-only`). If you use a relative path, make sure you run both passes from the same working directory.
 
 ### Run the script
 
