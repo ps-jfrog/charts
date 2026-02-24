@@ -42,6 +42,9 @@ The script resolves its own directory so it can call `compare-and-reconcile.sh` 
 Set the same variables as in QUICKSTART Step 1. Example for Artifactory SH → Cloud:
 
 ```bash
+# Optional: enable debug logging for jf compare (shows AQL queries, HTTP requests, pagination details)
+export JFROG_CLI_LOG_LEVEL=DEBUG
+
 export COMPARE_SOURCE_NEXUS="0"
 export COMPARE_TARGET_ARTIFACTORY_SH="1"
 export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"
@@ -58,6 +61,8 @@ export CLOUD_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
 # Optional: where to put b4_upload/ and after_upload/ (default: script directory)
 export RECONCILE_BASE_DIR="/path/to/my/output"
 ```
+
+> **`JFROG_CLI_LOG_LEVEL=DEBUG`** enables verbose logging from `jf compare` commands, including the full AQL queries sent to Artifactory, HTTP request/response details, pagination offsets, and artifact counts per repo. This is useful for diagnosing crawl issues (e.g. verifying which repos are being queried, how many results each AQL page returns, or why certain artifacts are missing). Remove or set to `INFO` for quieter output in production runs.
 
 > **Recommendation:** Use an **absolute path** for `RECONCILE_BASE_DIR` to avoid ambiguity, especially in the two-pass workflow (`--generate-only` then `--run-only`). If you use a relative path, make sure you run both passes from the same working directory.
 
