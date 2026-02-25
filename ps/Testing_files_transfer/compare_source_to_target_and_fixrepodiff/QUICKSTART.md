@@ -319,7 +319,30 @@ app2    __infra_local_docker  /jolly-unicorn/sha256:5ce63a8aeae5814412b549ec6ad7
 app2    __infra_local_docker  /jolly-unicorn/sha256:84c7478b29c069870f0f867ee58a2dfb895f64920973ed2b77bb92bdcfb5269a/mani...    delay: docker           delay
 ```
 
-The `reason_category` is `exclude` for artifacts skipped entirely (e.g. `.jfrog/` internal files) or `delay` for artifacts deferred to a later phase (e.g. Docker manifests synced via `04_to_sync_delayed.sh`).
+The `reason_category` is `exclude` for artifacts skipped entirely (e.g. `.jfrog/` internal files) or `delay` for artifacts deferred to a later phase (e.g. Docker manifests synced via `04_to_sync_delayed.sh`) and  for  "docker temporary files" like the `%_uploads/%`.
+
+Count of excluded artifacts (excluding delayed ones):
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT COUNT(*) AS count_excluding_delay
+FROM comparison_reasons
+WHERE reason_category != 'delay';
+"
+```
+
+Count grouped by reason category (excluding delays):
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT reason_category,
+       COUNT(*) AS count
+FROM comparison_reasons
+WHERE reason_category != 'delay'
+GROUP BY reason_category
+ORDER BY count DESC;
+"
+```
 
 ### e) Exclusion summary
 
