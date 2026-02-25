@@ -306,6 +306,18 @@ LIMIT 10;
 "
 ```
 
+Filter by a specific source and repository (values taken from the `cross_instance_mapping` output above):
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, repository_name, uri, reason, reason_category
+FROM comparison_reasons
+WHERE source = 'app2'
+  AND repository_name = '__infra_local_docker'
+LIMIT 10;
+"
+```
+
 Example output:
 
 ```
