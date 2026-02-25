@@ -122,6 +122,22 @@ bash sync-target-from-source.sh \
 
 After the verification run, the generated scripts (`03_to_sync.sh`, `05_to_sync_stats.sh`, etc.) should have zero or near-zero lines, confirming that source and target are in sync.
 
+### One-shot run (single command)
+
+If you don't need to review the generated scripts before execution, you can run everything end-to-end in a single command by omitting both `--generate-only` and `--run-only`:
+
+```bash
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix
+```
+
+This runs all steps in sequence:
+1. **Step 2:** Compare source and target (generates scripts `01`–`06`)
+2. **Step 3:** Execute before-upload scripts (`01`–`06`, including `04` when `--run-delayed` is used)
+3. **Step 4:** After-upload compare (generates scripts `07`–`09`)
+4. **Step 5:** Execute after-upload scripts (`07`–`09`, including `09` when `--run-folder-stats` is used)
+
 > **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands.
 
 > **Logging:** To capture the full output of `sync-target-from-source.sh` (including debug AQL queries and timing) to a log file while still seeing it on screen, append `2>&1 | tee <logfile>`:
