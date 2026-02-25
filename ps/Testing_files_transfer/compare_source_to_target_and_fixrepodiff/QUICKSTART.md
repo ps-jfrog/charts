@@ -419,6 +419,28 @@ app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-
 app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__61573f02fa22c37f2a927ae9483828ef6ed760a27...    26f772b9f62ddb043099a94f4e3a4e1d1864d9e6  3146941
 ```
 
+### i) Folder count
+
+Count the number of folders crawled for a repository (folders have no checksums):
+
+```bash
+sqlite3 comparison.db "
+SELECT COUNT(*) AS folder_count
+FROM artifacts
+WHERE repository_name='__infra_local_docker'
+  AND sha1 IS NULL AND sha2 IS NULL AND md5 IS NULL;
+"
+```
+
+You can cross-check this against Artifactory's storage info:
+
+```bash
+jf rt curl "/api/storageinfo" --server-id=app2 2>/dev/null \
+  | jq '.repositoriesSummaryList[] | select(.repoKey=="__infra_local_docker") | .foldersCount'
+```
+
+> **Note:** The storage info may be cached. Refresh it with `jf rt curl -X POST "/api/storageinfo/calculate" --server-id=app2` if the numbers look stale.
+
 ### Verifying excluded files
 
 The compare plugin uses **exclusion rules** (seeded in `03a-table-exclusion-rules.sql`) to skip certain paths during artifact sync (e.g. npm 
