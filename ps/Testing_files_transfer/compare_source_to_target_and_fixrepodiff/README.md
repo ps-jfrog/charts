@@ -62,7 +62,7 @@ export CLOUD_ARTIFACTORY_REPOS="sv-docker-local,example-repo-local"
 export RECONCILE_BASE_DIR="/path/to/my/output"
 ```
 
-> **`JFROG_CLI_LOG_LEVEL=DEBUG`** enables verbose logging from `jf compare` commands, including the full AQL queries sent to Artifactory, HTTP request/response details, pagination offsets, and artifact counts per repo. This is useful for diagnosing crawl issues (e.g. verifying which repos are being queried, how many results each AQL page returns, or why certain artifacts are missing). Remove or set to `INFO` for quieter output in production runs.
+> **`JFROG_CLI_LOG_LEVEL=DEBUG`** enables verbose logging from `jf compare` commands, including the full AQL queries sent to Artifactory, HTTP request/response details, pagination offsets, and artifact counts per repo. This is useful for diagnosing crawl issues (e.g. verifying which repos are being queried, how many results each AQL page returns, or why certain artifacts are missing). Note: even if you do not set this variable, `compare-and-reconcile.sh` defaults it to `DEBUG` (see `export JFROG_CLI_LOG_LEVEL="${JFROG_CLI_LOG_LEVEL:-DEBUG}"`). Set it to `INFO` explicitly to override that default for quieter output in production runs.
 
 > **Recommendation:** Use an **absolute path** for `RECONCILE_BASE_DIR` to avoid ambiguity, especially in the two-pass workflow (`--generate-only` then `--run-only`). If you use a relative path, make sure you run both passes from the same working directory.
 
@@ -123,6 +123,12 @@ bash sync-target-from-source.sh \
 After the verification run, the generated scripts (`03_to_sync.sh`, `05_to_sync_stats.sh`, etc.) should have zero or near-zero lines, confirming that source and target are in sync.
 
 > **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands.
+
+> **Logging:** To capture the full output of `sync-target-from-source.sh` (including debug AQL queries and timing) to a log file while still seeing it on screen, append `2>&1 | tee <logfile>`:
+>
+> ```bash
+> bash sync-target-from-source.sh --config myenv.sh --generate-only 2>&1 | tee sync-output.log
+> ```
 
 ---
 
