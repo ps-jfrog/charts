@@ -280,6 +280,22 @@ group_and_run_sync() {
   fi
 }
 
+run_verification() {
+  local _start=$(date +%s)
+  echo ""
+  echo "=== Step 6: Post-sync verification (jf compare query) ==="
+  VERIFY_SCRIPT="$SCRIPT_DIR/verify-comparison-db.sh"
+  if [[ -f "$VERIFY_SCRIPT" ]] && [[ -r "$VERIFY_SCRIPT" ]]; then
+    VERIFY_ARGS=(--source "$SH_ARTIFACTORY_AUTHORITY")
+    [[ -n "${SH_ARTIFACTORY_REPOS:-}" ]] && VERIFY_ARGS+=(--repos "$SH_ARTIFACTORY_REPOS")
+    ( cd "$RECONCILE_BASE_DIR" && bash "$VERIFY_SCRIPT" "${VERIFY_ARGS[@]}" )
+  else
+    echo "  verify-comparison-db.sh not found; skipping verification queries." >&2
+    echo "  Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'."
+  fi
+  echo "[timing] Step 6 (verification queries) completed in $(format_elapsed $_start)"
+}
+
 # Step 2: Compare and reconcile (before-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports are created there
 STEP2_START=$(date +%s)
 if [[ "$RUN_ONLY" -eq 1 ]]; then
@@ -308,6 +324,7 @@ if [[ "$GENERATE_ONLY" -eq 1 ]]; then
   done
   echo ""
   echo "Review these scripts, then run with --run-only to execute Steps 3–5."
+  run_verification
   echo ""
   echo "[timing] Total elapsed: $(format_elapsed $OVERALL_START)"
   exit 0
@@ -398,20 +415,7 @@ else
 fi
 echo "[timing] Step 5 (after-upload reconciliation) completed in $(format_elapsed $STEP5_START)"
 
-# Step 6: Post-sync verification queries via jf compare query
-STEP6_START=$(date +%s)
-echo ""
-echo "=== Step 6: Post-sync verification (jf compare query) ==="
-VERIFY_SCRIPT="$SCRIPT_DIR/verify-comparison-db.sh"
-if [[ -f "$VERIFY_SCRIPT" ]] && [[ -r "$VERIFY_SCRIPT" ]]; then
-  VERIFY_ARGS=(--source "$SH_ARTIFACTORY_AUTHORITY")
-  [[ -n "${SH_ARTIFACTORY_REPOS:-}" ]] && VERIFY_ARGS+=(--repos "$SH_ARTIFACTORY_REPOS")
-  ( cd "$RECONCILE_BASE_DIR" && bash "$VERIFY_SCRIPT" "${VERIFY_ARGS[@]}" )
-else
-  echo "  verify-comparison-db.sh not found; skipping verification queries." >&2
-  echo "  Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'."
-fi
-echo "[timing] Step 6 (verification queries) completed in $(format_elapsed $STEP6_START)"
+run_verification
 
 echo ""
 echo "=== Sync workflow complete ==="
