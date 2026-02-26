@@ -213,7 +213,13 @@ If sync completed successfully, pulls from the target should match what you had 
 After running `compare-and-reconcile.sh` (or `sync-target-from-source.sh`), the SQLite database `comparison.db` contains all crawled artifacts, exclusion rules, mappings, and comparison results. The queries below help you inspect the database and verify sync outcomes.
 
 > **Note:** Replace source/repo names as needed. Find your values with:
-> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
+> ```bash
+> sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"
+> # Or without sqlite3:
+> jf compare query "SELECT DISTINCT source, repository_name FROM artifacts"
+> ```
+
+> **Tip:** All `sqlite3` queries in this section can also be run with `jf compare query` (no `sqlite3` installation required). The `jf compare query` alternative is shown after each `sqlite3` example.
 
 ### a) Exclusion rules
 
@@ -225,6 +231,7 @@ SELECT id, pattern, reason, enabled, priority
 FROM exclusion_rules
 ORDER BY priority, id;
 "
+# Or: jf compare query "SELECT id, pattern, reason, enabled, priority FROM exclusion_rules ORDER BY priority, id"
 ```
 
 Example output:
@@ -256,6 +263,7 @@ SELECT id, pattern, reason, enabled, priority
 FROM property_exclusion_rules
 ORDER BY priority, id;
 "
+# Or: jf compare query "SELECT id, pattern, reason, enabled, priority FROM property_exclusion_rules ORDER BY priority, id"
 ```
 
 Example output:
@@ -282,6 +290,7 @@ SELECT source, source_repo, equivalence_key, target, target_repo,
        match_type, sync_type, source_artifact_count, target_artifact_count
 FROM cross_instance_mapping;
 "
+# Or: jf compare query "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
 ```
 
 Example output:
@@ -304,6 +313,7 @@ SELECT source, repository_name, uri, reason, reason_category
 FROM comparison_reasons
 LIMIT 10;
 "
+# Or: jf compare query "SELECT source, repository_name, uri, reason, reason_category FROM comparison_reasons LIMIT 10"
 ```
 
 Filter by a specific source and repository (values taken from the `cross_instance_mapping` output above):
@@ -316,6 +326,7 @@ WHERE source = 'app2'
   AND repository_name = '__infra_local_docker'
 LIMIT 10;
 "
+# Or: jf compare query "SELECT source, repository_name, uri, reason, reason_category FROM comparison_reasons WHERE source = 'app2' AND repository_name = '__infra_local_docker' LIMIT 10"
 ```
 
 Example output:
@@ -341,6 +352,7 @@ SELECT COUNT(*) AS count_excluding_delay
 FROM comparison_reasons
 WHERE reason_category != 'delay';
 "
+# Or: jf compare query "SELECT COUNT(*) AS count_excluding_delay FROM comparison_reasons WHERE reason_category != 'delay'"
 ```
 
 Count grouped by reason category (excluding delays):
@@ -354,6 +366,7 @@ WHERE reason_category != 'delay'
 GROUP BY reason_category
 ORDER BY count DESC;
 "
+# Or: jf compare query "SELECT reason_category, COUNT(*) AS count FROM comparison_reasons WHERE reason_category != 'delay' GROUP BY reason_category ORDER BY count DESC"
 ```
 
 ### e) Exclusion summary
@@ -366,6 +379,7 @@ SELECT repository_name, source, reason, total
 FROM exclusion_summary
 ORDER BY repository_name, source, reason;
 "
+# Or: jf compare query "SELECT repository_name, source, reason, total FROM exclusion_summary ORDER BY repository_name, source, reason"
 ```
 
 Example output:
@@ -392,6 +406,7 @@ SELECT repo, src, dest, path, type, sha1_src, sha1_dest
 FROM mismatch
 LIMIT 10;
 "
+# Or: jf compare query "SELECT repo, src, dest, path, type, sha1_src, sha1_dest FROM mismatch LIMIT 10"
 ```
 
 Example output:
@@ -419,6 +434,7 @@ sqlite3 -header -column comparison.db "
 SELECT repo, src, dest, type, count
 FROM mismatch_summary;
 "
+# Or: jf compare query "SELECT repo, src, dest, type, count FROM mismatch_summary"
 ```
 
 Example output:
@@ -441,6 +457,7 @@ SELECT source, source_repo, target, target_repo, path, sha1_source, size_source
 FROM missing
 LIMIT 10;
 "
+# Or: jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing LIMIT 10"
 ```
 
 Example output:
@@ -465,6 +482,7 @@ FROM artifacts
 WHERE repository_name='__infra_local_docker'
   AND sha1 IS NULL AND sha2 IS NULL AND md5 IS NULL;
 "
+# Or: jf compare query "SELECT COUNT(*) AS folder_count FROM artifacts WHERE repository_name='__infra_local_docker' AND sha1 IS NULL AND sha2 IS NULL AND md5 IS NULL"
 ```
 
 You can cross-check this against Artifactory's storage info:
@@ -483,7 +501,10 @@ metadata `.json` files, maven `pom.xml`, checksum files). You can query `compari
 confirm that all non-excluded files have been synced.
 
 > **Note:** Replace `psazuse` and `npmjs-remote-cache` with your source authority and repo name. You can find these values with:
-> `sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"`
+> ```bash
+> sqlite3 comparison.db "SELECT DISTINCT source, repository_name FROM artifacts;"
+> # Or: jf compare query "SELECT DISTINCT source, repository_name FROM artifacts"
+> ```
 
 **Count of excluded files in the source repo:**
 
@@ -495,6 +516,7 @@ JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern
 WHERE a.source = 'psazuse'
   AND a.repository_name = 'npmjs-remote-cache';
 "
+# Or: jf compare query "SELECT COUNT(*) AS excluded_count FROM artifacts a JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern WHERE a.source = 'psazuse' AND a.repository_name = 'npmjs-remote-cache'"
 ```
 
 **List of excluded files with the matching exclusion rule:**
@@ -508,7 +530,9 @@ WHERE a.source = 'psazuse'
   AND a.repository_name = 'npmjs-remote-cache'
 ORDER BY a.uri;
 "
+# Or: jf compare query "SELECT a.uri, r.pattern, r.reason FROM artifacts a JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern WHERE a.source = 'psazuse' AND a.repository_name = 'npmjs-remote-cache' ORDER BY a.uri"
 ```
+
 
 ---
 
@@ -518,7 +542,8 @@ ORDER BY a.uri;
 |--------|--------|
 | **compare-and-reconcile.sh** | Compare source vs target and generate reconciliation scripts. Requires **--b4upload** or **--after-upload**. |
 | **runcommand_in_parallel_from_file.sh** | Run commands from a file in parallel; `--log-success` logs successful commands; args: `<command_file> <failure_log_file> <max_parallel>`. |
-| **sync-target-from-source.sh** | One-shot: run Steps 2–5 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09). Set env vars (Step 1) then run; see [README.md](README.md). |
+| **sync-target-from-source.sh** | One-shot: run Steps 2–6 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09 → verify). Set env vars (Step 1) then run; see [README.md](README.md). |
+| **verify-comparison-db.sh** | Post-sync verification: queries `comparison.db` via `jf compare query` to display exclusion rules, repo mapping, reason-category counts, and excluded files sample. Called by `sync-target-from-source.sh` Step 6, or run standalone with `--source <authority> --repos <csv>`. |
 
 ---
 
@@ -530,7 +555,11 @@ To run the full sync without executing each step manually, set the required envi
 ./sync-target-from-source.sh
 ```
 
-Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README.md](README.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README.md](README.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--aql-page-size`, `--folder-parallel`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
+
+> **Tip:** Use `--aql-page-size 5000` for large repos to reduce the number of AQL round trips (default is 500). If Artifactory's payload limit truncates a page, the plugin handles it correctly — it processes whatever is returned, advances the offset, and fetches the next page.
+
+> **Tip:** Use `--folder-parallel 16` with `--aql-style sha1-prefix` for large Docker repos that have many `sha256:` folders. This parallelizes the folder crawl by splitting `sha256:` hex prefixes across 16 workers (plus a catch-all for non-`sha256:` folders). The default is 4 workers. For non-Docker repos, most folders land in the catch-all bucket, so the flag is harmless.
 
 ### Two-pass workflow: generate, review, then execute
 

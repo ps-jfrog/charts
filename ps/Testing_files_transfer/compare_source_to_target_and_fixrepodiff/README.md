@@ -1,6 +1,6 @@
 # sync-target-from-source.sh — One-shot sync workflow
 
-This script automates **Steps 2 through 5** of [QUICKSTART.md](QUICKSTART.md): it runs the full compare-and-reconcile workflow (before-upload and after-upload) and executes all generated reconciliation scripts so that the **target Artifactory matches the source** in one invocation.
+This script automates **Steps 2 through 6** of [QUICKSTART.md](QUICKSTART.md): it runs the full compare-and-reconcile workflow (before-upload and after-upload), executes all generated reconciliation scripts, and runs post-sync verification queries so that the **target Artifactory matches the source** in one invocation.
 
 **Step 1** (setting environment variables) is not automated: you must set the required env vars before running the script, or pass a config file with `--config <file>`.
 
@@ -15,6 +15,7 @@ This script automates **Steps 2 through 5** of [QUICKSTART.md](QUICKSTART.md): i
 | Step 3 | **Step 3** | Run before-upload scripts 01–06 via `runcommand_in_parallel_from_file.sh`. 01/02 skippable (`--skip-consolidation`); 04 skipped by default (`--run-delayed` to include). For 03/04: same-URL uses `jf rt cp`; different-URL groups by SHA1. For 06: filters out sync-only lines via `filter_sync_only_folder_props.sh`, running `06a` instead. |
 | Step 4 | **Step 4** | Run `compare-and-reconcile.sh --after-upload ...`; output in `after_upload/` |
 | Step 5 | **Step 5** | Run after-upload scripts 07, 08 via `runcommand_in_parallel_from_file.sh`. Script 09 is skipped by default; use `--run-folder-stats` to include it. |
+| Step 6 | *(new)* | Post-sync verification: runs [verify-comparison-db.sh](verify-comparison-db.sh) to query `comparison.db` via `jf compare query` — displays exclusion rules, repo mapping, reason-category counts, and excluded files sample. |
 
 The script resolves its own directory so it can call `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly no matter where you run it from.
 
@@ -129,7 +130,8 @@ If you don't need to review the generated scripts before execution, you can run 
 ```bash
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix
+  --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16
 ```
 
 This runs all steps in sequence:
@@ -137,6 +139,7 @@ This runs all steps in sequence:
 2. **Step 3:** Execute before-upload scripts (`01`–`06`, including `04` when `--run-delayed` is used)
 3. **Step 4:** After-upload compare (generates scripts `07`–`09`)
 4. **Step 5:** Execute after-upload scripts (`07`–`09`, including `09` when `--run-folder-stats` is used)
+5. **Step 6:** Post-sync verification — runs `verify-comparison-db.sh` to query `comparison.db` and display exclusion rules, repo mapping, reason-category counts, and excluded files sample
 
 > **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands.
 
@@ -160,6 +163,8 @@ This runs all steps in sequence:
 | `--run-folder-stats` | Run `09_to_sync_folder_stats_as_properties.sh` in the after-upload phase (default: skip). |
 | `--max-parallel <N>` | Max concurrent commands when running reconciliation scripts (default: 10). |
 | `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_STYLE`. |
+| `--aql-page-size <N>` | AQL page size for `jf compare list` (default 500). Larger values (e.g. 5000) reduce round trips for large repos. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_PAGE_SIZE`. |
+| `--folder-parallel <N>` | Parallel workers for folder crawl in `sha1-prefix` mode (default 4). Useful for large Docker repos with many `sha256:` folders. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_FOLDER_PARALLEL`. |
 | `--include-remote-cache` | Include remote-cache repos (e.g. `npmjs-remote-cache`) in the crawl. Required when repos are remote-cache type; without it they are silently excluded. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_INCLUDE_REMOTE_CACHE=1`. |
 | `-h`, `--help` | Show usage and exit. |
 
@@ -202,6 +207,20 @@ When using **sync-target-from-source.sh**, the before-upload run writes its audi
 
 - Inspect failure logs in `b4_upload/*_out.txt` and `after_upload/*_out.txt` for any failed commands.
 - Verify from the target (e.g. **QUICKSTART.md Step 6**): Docker insecure registries, `docker login`, `docker pull` from the target.
+- **Re-run verification queries** at any time using the standalone script (no need to re-run the full sync):
+
+```bash
+bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example-repo-local"
+```
+
+Or if the env vars are already set from your config file:
+
+```bash
+source config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh
+bash verify-comparison-db.sh --source "$SH_ARTIFACTORY_AUTHORITY" --repos "$SH_ARTIFACTORY_REPOS"
+```
+
+See [README-verify-comparison-db.md](README-verify-comparison-db.md) for full options and examples.
 
 ---
 
@@ -209,6 +228,6 @@ When using **sync-target-from-source.sh**, the before-upload run writes its audi
 
 - **Manual:** You run Steps 1–5 yourself (set env, run compare-and-reconcile twice, run each generated script with `runcommand_in_parallel_from_file.sh`).
 - **Two-pass:** Use `--generate-only` to generate scripts, review them, then `--run-only` to execute.
-- **One-shot:** You set env (or `--config`) once and run `./sync-target-from-source.sh`; it performs Steps 2–5 for you.
+- **One-shot:** You set env (or `--config`) once and run `./sync-target-from-source.sh`; it performs Steps 2–6 for you.
 
 For more control (e.g. running only some scripts or changing order), use the manual flow in [QUICKSTART.md](QUICKSTART.md).

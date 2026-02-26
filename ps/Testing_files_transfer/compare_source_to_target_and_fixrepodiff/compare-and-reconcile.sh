@@ -61,6 +61,11 @@ OPTIONS:
                                One-way sync: make target match source. Drops commands that update the source.
   --aql-style <style>          AQL crawl style for 'jf compare list' (e.g. sha1-prefix). If not set, uses the
                                default repo-based crawl. Also settable via env COMPARE_AQL_STYLE.
+  --aql-page-size <N>          AQL page size for 'jf compare list' (default 500). Larger values reduce
+                               round trips. Also settable via env COMPARE_AQL_PAGE_SIZE.
+  --folder-parallel <N>        Parallel workers for folder crawl in sha1-prefix mode (default 4).
+                               Useful for large Docker repos with many sha256: folders.
+                               Also settable via env COMPARE_FOLDER_PARALLEL.
   --include-remote-cache       Include remote-cache repos in the crawl. Required when --repos names a
                                remote-cache repo (e.g. npmjs-remote-cache). Also settable via env
                                COMPARE_INCLUDE_REMOTE_CACHE=1.
@@ -83,6 +88,8 @@ RECONCILIATION:
   RECONCILE_TARGET_ONLY=1      Same as --target-only (filter scripts so only target-side commands remain).
   RECONCILE_OUTPUT_DIR=<dir>   Where to write to_*.sh scripts (default: current directory).
   COMPARE_AQL_STYLE=<style>    Same as --aql-style (e.g. sha1-prefix). Appended to all 'jf compare list' calls.
+  COMPARE_AQL_PAGE_SIZE=<N>    Same as --aql-page-size (e.g. 5000). Appended to all 'jf compare list' calls.
+  COMPARE_FOLDER_PARALLEL=<N>  Same as --folder-parallel (e.g. 16). Appended to all 'jf compare list' calls.
   COMPARE_INCLUDE_REMOTE_CACHE=1  Same as --include-remote-cache.
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
@@ -96,6 +103,8 @@ EOF
 # Parse options
 RECONCILE_MODE=""
 AQL_STYLE="${COMPARE_AQL_STYLE:-}"
+AQL_PAGE_SIZE="${COMPARE_AQL_PAGE_SIZE:-}"
+FOLDER_PARALLEL="${COMPARE_FOLDER_PARALLEL:-}"
 INCLUDE_REMOTE_CACHE="${COMPARE_INCLUDE_REMOTE_CACHE:-0}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -124,6 +133,16 @@ while [[ $# -gt 0 ]]; do
             AQL_STYLE="$2"
             shift 2
             ;;
+        --aql-page-size)
+            [[ $# -lt 2 ]] && { echo "Error: --aql-page-size requires a numeric value." >&2; exit 1; }
+            AQL_PAGE_SIZE="$2"
+            shift 2
+            ;;
+        --folder-parallel)
+            [[ $# -lt 2 ]] && { echo "Error: --folder-parallel requires a numeric value." >&2; exit 1; }
+            FOLDER_PARALLEL="$2"
+            shift 2
+            ;;
         --include-remote-cache)
             INCLUDE_REMOTE_CACHE=1
             shift
@@ -143,6 +162,14 @@ done
 # Build AQL style flag (empty when not set → default repo-based crawl)
 AQL_STYLE_FLAG=""
 [[ -n "$AQL_STYLE" ]] && AQL_STYLE_FLAG="--aql-style=$AQL_STYLE"
+
+# Build AQL page size flag (empty when not set → default 500)
+AQL_PAGE_SIZE_FLAG=""
+[[ -n "$AQL_PAGE_SIZE" ]] && AQL_PAGE_SIZE_FLAG="--aql-page-size=$AQL_PAGE_SIZE"
+
+# Build folder-parallel flag (empty when not set → plugin default 4)
+FOLDER_PARALLEL_FLAG=""
+[[ -n "$FOLDER_PARALLEL" ]] && FOLDER_PARALLEL_FLAG="--folder-parallel=$FOLDER_PARALLEL"
 
 # Build include-remote-cache flag (empty when not set → only LOCAL/FEDERATED repos)
 INCLUDE_REMOTE_CACHE_FLAG=""
@@ -263,6 +290,8 @@ echo "=== Compare and Reconcile ==="
 echo "Scenario: $COMPARISON_SCENARIO | Discovery: $ARTIFACTORY_DISCOVERY_METHOD | Report: $REPORT_FILE"
 echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIES | Generate reconcile scripts: $RECONCILE"
 [ -n "$AQL_STYLE" ] && echo "AQL style: $AQL_STYLE"
+[ -n "$AQL_PAGE_SIZE" ] && echo "AQL page size: $AQL_PAGE_SIZE"
+[ -n "$FOLDER_PARALLEL" ] && echo "Folder parallel workers: $FOLDER_PARALLEL"
 [[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && echo "Include remote-cache repos: yes"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
@@ -361,17 +390,17 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
             echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
             if [ -n "${SH_LIST_REPOS:-}" ]; then
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
             else
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
             fi
             echo ""
         fi
         echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
         if [ -n "${TARGET_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         else
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         fi
         echo ""
     fi

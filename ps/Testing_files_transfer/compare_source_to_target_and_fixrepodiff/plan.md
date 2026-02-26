@@ -209,6 +209,50 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - **Integration in `sync-target-from-source.sh`:** After `06_to_sync_folder_props.sh` is generated, run the filter script to produce `06a_lines_other_than_only_sync_folder_props.sh`, then run `06a` instead of `06`. If the filter script is not available, fall back to running `06` as-is.
   - **Rationale:** The `sync.*` properties on folders are informational metadata stamps set by `09_to_sync_folder_stats_as_properties.sh` (after-upload phase). They are always regenerated from the internal folder metadata, which cannot be changed. Running these sync-only lines in the before-upload phase is a no-op that wastes time — especially on repos with thousands of folders. Lines that include user-defined properties (like `folder-color=red`) alongside `sync.*` properties must still be run because the user properties are the actual data being synced.
 
+### 1.13 Post-sync verification queries via `jf compare query`
+
+- [x] **T20** At the end of `sync-target-from-source.sh`, after all reconciliation scripts have been executed, automatically run a set of verification queries using `jf compare query` to give the operator a quick summary of the comparison database state. The queries should cover:
+
+  **a) Exclusion rules** — List all path-based exclusion rules:
+  ```
+  jf compare query "SELECT id, pattern, reason, enabled, priority FROM exclusion_rules ORDER BY priority, id"
+  ```
+
+  **c) Cross-instance mapping** — Show how source and target repos were paired:
+  ```
+  jf compare query "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
+  ```
+
+  **Count grouped by reason category (excluding delays)** — Filtered to the source authority only (`SH_ARTIFACTORY_AUTHORITY`):
+  ```
+  jf compare query "SELECT reason_category, COUNT(*) AS count FROM comparison_reasons WHERE reason_category != 'delay' AND source = '<SH_ARTIFACTORY_AUTHORITY>' GROUP BY reason_category ORDER BY count DESC"
+  ```
+
+  **List of excluded files with matching exclusion rule** — Filtered to the source authority (`SH_ARTIFACTORY_AUTHORITY`) and the source repos (`SH_ARTIFACTORY_REPOS`, each repo queried individually or comma-expanded):
+  ```
+  jf compare query "SELECT source, repository_name, uri, reason, reason_category FROM comparison_reasons WHERE source = '<SH_ARTIFACTORY_AUTHORITY>' AND repository_name = '<repo>' LIMIT 10"
+  ```
+
+  **Implementation details:**
+  - Use `jf compare query` (Task 30 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md`) instead of `sqlite3` so no external dependency is required.
+  - Substitute `SH_ARTIFACTORY_AUTHORITY` into the SQL `WHERE source = '...'` clause.
+  - For the excluded-files query, iterate over the repos in `SH_ARTIFACTORY_REPOS` (comma-separated) and run one query per repo with `repository_name = '<repo>'`.
+  - Print each query result with a clear header (e.g. `=== Exclusion rules ===`).
+  - This step runs after both the before-upload and after-upload phases are complete (i.e. at the very end of the script, after Step 5).
+  - If `jf compare query` is not available (older plugin version), skip gracefully with a note.
+
+  **Documentation subtask:** Update the [QUICKSTART.md](QUICKSTART.md) "Inspecting comparison.db" section to show `jf compare query` equivalents for every `sqlite3` query (sections a–i). For each query, add an alternative using `jf compare query` so users without `sqlite3` installed can run the same inspections. For example:
+  ```
+  # Using sqlite3:
+  sqlite3 -header -column comparison.db "SELECT id, pattern, reason, enabled, priority FROM exclusion_rules ORDER BY priority, id;"
+
+  # Using jf compare query (no sqlite3 needed):
+  jf compare query "SELECT id, pattern, reason, enabled, priority FROM exclusion_rules ORDER BY priority, id"
+  ```
+  Also update the introductory note to mention that `jf compare query` can be used as an alternative to `sqlite3` for all queries in this section, and update the `SELECT DISTINCT source, repository_name FROM artifacts` discovery query in the note.
+
+**Implemented:** Created standalone [verify-comparison-db.sh](verify-comparison-db.sh) script that accepts `--source <authority>` and `--repos <csv>` (with env fallbacks `SH_ARTIFACTORY_AUTHORITY` / `SH_ARTIFACTORY_REPOS`). Runs four `jf compare query` calls: exclusion rules, cross-instance mapping, reason category counts (filtered by source), and excluded files sample (per repo). Graceful exit if `jf compare query` is not available. `sync-target-from-source.sh` Step 6 calls this script. Updated `QUICKSTART.md` "Inspecting comparison.db" section with `jf compare query` alternatives (comment lines) for all queries in sections a–i and "Verifying excluded files". Added introductory tip about `jf compare query` as a `sqlite3` alternative.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

@@ -46,6 +46,8 @@ SKIP_CONSOLIDATION=0
 SKIP_DELAYED=1
 CONFIG_FILE=""
 AQL_STYLE=""
+AQL_PAGE_SIZE=""
+FOLDER_PARALLEL=""
 INCLUDE_REMOTE_CACHE=""
 GENERATE_ONLY=0
 RUN_ONLY=0
@@ -76,6 +78,12 @@ OPTIONS:
   --max-parallel <N>    Max concurrent commands when running reconciliation scripts (default: 10).
   --aql-style <style>   AQL crawl style for 'jf compare list' (e.g. sha1-prefix). Passed to
                         compare-and-reconcile.sh. Also settable via env COMPARE_AQL_STYLE.
+  --aql-page-size <N>  AQL page size for 'jf compare list' (default 500). Larger values (e.g. 5000)
+                        reduce round trips. Passed to compare-and-reconcile.sh. Also settable via env
+                        COMPARE_AQL_PAGE_SIZE.
+  --folder-parallel <N> Parallel workers for folder crawl in sha1-prefix mode (default 4). Useful
+                        for large Docker repos with many sha256: folders. Passed to
+                        compare-and-reconcile.sh. Also settable via env COMPARE_FOLDER_PARALLEL.
   --include-remote-cache  Include remote-cache repos in the crawl. Required when --repos names a
                         remote-cache repo (e.g. npmjs-remote-cache). Passed to compare-and-reconcile.sh.
                         Also settable via env COMPARE_INCLUDE_REMOTE_CACHE=1.
@@ -124,6 +132,16 @@ while [[ $# -gt 0 ]]; do
     --aql-style)
       [[ $# -lt 2 ]] && { echo "Error: --aql-style requires a value (e.g. sha1-prefix)." >&2; exit 1; }
       AQL_STYLE="$2"
+      shift 2
+      ;;
+    --aql-page-size)
+      [[ $# -lt 2 ]] && { echo "Error: --aql-page-size requires a numeric value." >&2; exit 1; }
+      AQL_PAGE_SIZE="$2"
+      shift 2
+      ;;
+    --folder-parallel)
+      [[ $# -lt 2 ]] && { echo "Error: --folder-parallel requires a numeric value." >&2; exit 1; }
+      FOLDER_PARALLEL="$2"
       shift 2
       ;;
     --include-remote-cache)
@@ -175,6 +193,12 @@ fi
 
 # AQL style: CLI flag overrides env; env from config is also respected
 [[ -n "$AQL_STYLE" ]] && export COMPARE_AQL_STYLE="$AQL_STYLE"
+
+# AQL page size: CLI flag overrides env; env from config is also respected
+[[ -n "$AQL_PAGE_SIZE" ]] && export COMPARE_AQL_PAGE_SIZE="$AQL_PAGE_SIZE"
+
+# Folder parallel: CLI flag overrides env; env from config is also respected
+[[ -n "$FOLDER_PARALLEL" ]] && export COMPARE_FOLDER_PARALLEL="$FOLDER_PARALLEL"
 
 # Include remote-cache: CLI flag overrides env; env from config is also respected
 [[ -n "$INCLUDE_REMOTE_CACHE" ]] && export COMPARE_INCLUDE_REMOTE_CACHE="$INCLUDE_REMOTE_CACHE"
@@ -373,6 +397,21 @@ else
   echo "  Skipping 09_to_sync_folder_stats_as_properties.sh (use --run-folder-stats to include)."
 fi
 echo "[timing] Step 5 (after-upload reconciliation) completed in $(format_elapsed $STEP5_START)"
+
+# Step 6: Post-sync verification queries via jf compare query
+STEP6_START=$(date +%s)
+echo ""
+echo "=== Step 6: Post-sync verification (jf compare query) ==="
+VERIFY_SCRIPT="$SCRIPT_DIR/verify-comparison-db.sh"
+if [[ -f "$VERIFY_SCRIPT" ]] && [[ -r "$VERIFY_SCRIPT" ]]; then
+  VERIFY_ARGS=(--source "$SH_ARTIFACTORY_AUTHORITY")
+  [[ -n "${SH_ARTIFACTORY_REPOS:-}" ]] && VERIFY_ARGS+=(--repos "$SH_ARTIFACTORY_REPOS")
+  ( cd "$RECONCILE_BASE_DIR" && bash "$VERIFY_SCRIPT" "${VERIFY_ARGS[@]}" )
+else
+  echo "  verify-comparison-db.sh not found; skipping verification queries." >&2
+  echo "  Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'."
+fi
+echo "[timing] Step 6 (verification queries) completed in $(format_elapsed $STEP6_START)"
 
 echo ""
 echo "=== Sync workflow complete ==="
