@@ -135,7 +135,8 @@ If you don't need to review the generated scripts before execution, you can run 
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
   --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix \
-  --aql-page-size 5000 --folder-parallel 16
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
 ```
 
 This runs all steps in sequence:
@@ -170,6 +171,8 @@ This runs all steps in sequence:
 | `--aql-page-size <N>` | AQL page size for `jf compare list` (default 500). Larger values (e.g. 5000) reduce round trips for large repos. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_PAGE_SIZE`. |
 | `--folder-parallel <N>` | Parallel workers for folder crawl in `sha1-prefix` mode (default 4). Useful for large Docker repos with many `sha256:` folders. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_FOLDER_PARALLEL`. |
 | `--include-remote-cache` | Include remote-cache repos (e.g. `npmjs-remote-cache`) in the crawl. Required when repos are remote-cache type; without it they are silently excluded. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_INCLUDE_REMOTE_CACHE=1`. |
+| `--verification-csv [dir]` | Write CSV report files during Step 6 verification (one file per section per repo). If `<dir>` is omitted, defaults to `RECONCILE_BASE_DIR`. CSV files always contain the full data (no row limit). Passed to `verify-comparison-db.sh --csv`. |
+| `--verification-no-limit` | Show all files in verification output (Step 6) instead of the default first 20 per section. Passed to `verify-comparison-db.sh --no-limit`. |
 | `-h`, `--help` | Show usage and exit. |
 
 ---
@@ -223,6 +226,20 @@ Or if the env vars are already set from your config file:
 source config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh
 bash verify-comparison-db.sh --source "$SH_ARTIFACTORY_AUTHORITY" --repos "$SH_ARTIFACTORY_REPOS"
 ```
+
+By default, listings show the first 20 rows per section. To generate a **full report** with all files listed, add `--no-limit`:
+
+```bash
+bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example-repo-local" --no-limit
+```
+
+To also export **CSV files** (one per section per repo, always full data), add `--csv <dir>`:
+
+```bash
+bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example-repo-local" --no-limit --csv verification_csv
+```
+
+These flags can also be passed through `sync-target-from-source.sh` via `--verification-no-limit` and `--verification-csv [dir]` (defaults to `RECONCILE_BASE_DIR` when dir is omitted).
 
 See [README-verify-comparison-db.md](README-verify-comparison-db.md) for full options and examples.
 

@@ -52,6 +52,9 @@ INCLUDE_REMOTE_CACHE=""
 GENERATE_ONLY=0
 RUN_ONLY=0
 RUN_FOLDER_STATS=0
+VERIFICATION_CSV=""
+VERIFICATION_CSV_ENABLED=0
+VERIFICATION_NO_LIMIT=0
 
 show_help() {
   cat << EOF
@@ -87,6 +90,11 @@ OPTIONS:
   --include-remote-cache  Include remote-cache repos in the crawl. Required when --repos names a
                         remote-cache repo (e.g. npmjs-remote-cache). Passed to compare-and-reconcile.sh.
                         Also settable via env COMPARE_INCLUDE_REMOTE_CACHE=1.
+  --verification-csv [dir]  Write CSV report files during Step 6 verification (one file per
+                        section per repo). If <dir> is omitted, defaults to RECONCILE_BASE_DIR.
+                        Passed to verify-comparison-db.sh --csv.
+  --verification-no-limit   Show all files in verification (Step 6) instead of the default first 20.
+                        Passed to verify-comparison-db.sh --no-limit.
   -h, --help            Show this help.
 
 ENVIRONMENT (Step 1 – set these or use --config):
@@ -160,6 +168,19 @@ while [[ $# -gt 0 ]]; do
       RUN_FOLDER_STATS=1
       shift
       ;;
+    --verification-csv)
+      VERIFICATION_CSV_ENABLED=1
+      if [[ $# -ge 2 ]] && [[ "$2" != --* ]]; then
+        VERIFICATION_CSV="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
+    --verification-no-limit)
+      VERIFICATION_NO_LIMIT=1
+      shift
+      ;;
     *)
       echo "Unknown option: $1" >&2
       show_help
@@ -207,6 +228,11 @@ fi
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"
 B4_DIR="$RECONCILE_BASE_DIR/b4_upload"
 AFTER_DIR="$RECONCILE_BASE_DIR/after_upload"
+
+# Verification CSV: default dir to RECONCILE_BASE_DIR when flag is used without a path
+if [[ "$VERIFICATION_CSV_ENABLED" -eq 1 ]] && [[ -z "$VERIFICATION_CSV" ]]; then
+  VERIFICATION_CSV="$RECONCILE_BASE_DIR"
+fi
 
 # Validate required env vars (Case a: Artifactory SH → Cloud)
 if [[ "${COMPARE_SOURCE_NEXUS:-}" != "0" ]] || [[ "${COMPARE_TARGET_ARTIFACTORY_SH:-}" != "1" ]] || [[ "${COMPARE_TARGET_ARTIFACTORY_CLOUD:-}" != "1" ]]; then
@@ -288,6 +314,8 @@ run_verification() {
   if [[ -f "$VERIFY_SCRIPT" ]] && [[ -r "$VERIFY_SCRIPT" ]]; then
     VERIFY_ARGS=(--source "$SH_ARTIFACTORY_AUTHORITY")
     [[ -n "${SH_ARTIFACTORY_REPOS:-}" ]] && VERIFY_ARGS+=(--repos "$SH_ARTIFACTORY_REPOS")
+    [[ "$VERIFICATION_NO_LIMIT" -eq 1 ]] && VERIFY_ARGS+=(--no-limit)
+    [[ -n "$VERIFICATION_CSV" ]] && VERIFY_ARGS+=(--csv "$VERIFICATION_CSV")
     ( cd "$RECONCILE_BASE_DIR" && bash "$VERIFY_SCRIPT" "${VERIFY_ARGS[@]}" )
   else
     echo "  verify-comparison-db.sh not found; skipping verification queries." >&2

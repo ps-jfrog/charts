@@ -9,13 +9,15 @@ This script is called automatically by `sync-target-from-source.sh` as **Step 6*
 ## Usage
 
 ```bash
-bash verify-comparison-db.sh --source <authority> [--repos <csv>]
+bash verify-comparison-db.sh --source <authority> [--repos <csv>] [--no-limit] [--csv <dir>]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--source <authority>` | Source authority name (e.g. `app2`). Used to filter reason-category counts and excluded-files queries. **Required** (or set env `SH_ARTIFACTORY_AUTHORITY`). |
 | `--repos <csv>` | Comma-separated list of source repo names. When set, a per-repo report of missing, delay, and excluded files is shown — each with count and listing. Falls back to env `SH_ARTIFACTORY_REPOS`. |
+| `--no-limit` | Show all files instead of the default first 20 per section. Useful for generating a full report from `comparison.db`. |
+| `--csv <dir>` | Write CSV report files to `<dir>` (one file per section per repo). CSV files always contain the full data (no row limit) regardless of `--no-limit`. Files: `exclusion_rules.csv`, `cross_instance_mapping.csv`, `<repo>_missing.csv`, `<repo>_delay.csv`, `<repo>_excluded.csv`. |
 | `-h`, `--help` | Show help and exit. |
 
 ---
@@ -32,9 +34,9 @@ When `--repos` is set, the following per-repo report is shown for each repositor
 
 | Sub-section | Source | Description |
 |-------------|--------|-------------|
-| **Missing files** | `missing` view | Artifacts in source but not in target (excludes delays and exclusions). Count + first 20 rows. |
-| **Delay files** | `comparison_reasons` (`reason_category = 'delay'`) | Deferred artifacts (e.g. Docker manifests). Count + first 20 rows. |
-| **Excluded files** | `comparison_reasons` (`reason_category = 'exclude'`) | Skipped by exclusion rules. Count + first 20 rows. |
+| **Missing files** | `missing` view | Artifacts in source but not in target (excludes delays and exclusions). Count + first 20 rows (or all with `--no-limit`). |
+| **Delay files** | `comparison_reasons` (`reason_category = 'delay'`) | Deferred artifacts (e.g. Docker manifests). Count + first 20 rows (or all with `--no-limit`). |
+| **Excluded files** | `comparison_reasons` (`reason_category = 'exclude'`) | Skipped by exclusion rules. Count + first 20 rows (or all with `--no-limit`). |
 
 **Sample output:**
 
@@ -84,6 +86,48 @@ If `SH_ARTIFACTORY_AUTHORITY` and `SH_ARTIFACTORY_REPOS` are already exported (e
 ```bash
 bash verify-comparison-db.sh
 ```
+
+**Full report (no row limit):**
+
+```bash
+bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example-repo-local" --no-limit
+```
+
+Lists every missing, delayed, and excluded file per repo instead of the default first 20.
+
+**Full report with CSV export:**
+
+```bash
+bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example-repo-local" --no-limit --csv verification_csv
+```
+
+Displays the full report on screen and writes CSV files to `verification_csv/`:
+
+```
+verification_csv/
+├── exclusion_rules.csv
+├── cross_instance_mapping.csv
+├── __infra_local_docker_missing.csv
+├── __infra_local_docker_delay.csv
+├── __infra_local_docker_excluded.csv
+├── example-repo-local_missing.csv
+├── example-repo-local_delay.csv
+└── example-repo-local_excluded.csv
+```
+
+> **Note:** CSV files always contain the full data (no row limit), regardless of whether `--no-limit` is used. The `--no-limit` flag only affects the on-screen display. So `--csv` alone is sufficient for a complete CSV export; add `--no-limit` only if you also want the on-screen listing to show all rows.
+
+**Via `sync-target-from-source.sh`:**
+
+```bash
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-no-limit --verification-csv
+```
+
+When `--verification-csv` is used without a directory, it defaults to `RECONCILE_BASE_DIR`. To specify a custom directory: `--verification-csv /path/to/csv_output`.
 
 **Source only, no per-repo breakdown:**
 

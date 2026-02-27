@@ -577,7 +577,7 @@ ORDER BY a.uri;
 | **compare-and-reconcile.sh** | Compare source vs target and generate reconciliation scripts. Requires **--b4upload** or **--after-upload**. |
 | **runcommand_in_parallel_from_file.sh** | Run commands from a file in parallel; `--log-success` logs successful commands; args: `<command_file> <failure_log_file> <max_parallel>`. |
 | **sync-target-from-source.sh** | One-shot: run Steps 2–6 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09 → verify). Set env vars (Step 1) then run; see [README.md](README.md). |
-| **verify-comparison-db.sh** | Post-sync verification: queries `comparison.db` via `jf compare query` to display exclusion rules, repo mapping, reason-category counts, and a per-repo breakdown of missing files (in source, not in target), delay files (deferred), and excluded files (skipped by rules) — each with count and listing. Called by `sync-target-from-source.sh` Step 6, or run standalone with `--source <authority> --repos <csv>`. |
+| **verify-comparison-db.sh** | Post-sync verification: queries `comparison.db` via `jf compare query` to display exclusion rules, repo mapping, and a per-repo breakdown of missing files (in source, not in target), delay files (deferred), and excluded files (skipped by rules) — each with count and listing (first 20 by default; use `--no-limit` for the full report). Use `--csv <dir>` to export CSV files. Called by `sync-target-from-source.sh` Step 6, or run standalone with `--source <authority> --repos <csv> [--no-limit] [--csv <dir>]`. |
 
 ---
 
