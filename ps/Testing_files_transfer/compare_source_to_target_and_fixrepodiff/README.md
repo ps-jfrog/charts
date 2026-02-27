@@ -104,25 +104,24 @@ The recommended usage is the **two-pass** approach — generate scripts, review 
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
   --generate-only --include-remote-cache --aql-style sha1-prefix \
-  --aql-page-size 5000 --folder-parallel 16
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
 
 # Pass 2: execute generated scripts, run after-upload compare, and run 07–09
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
   --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix \
-  --aql-page-size 5000 --folder-parallel 16
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
 
 # Verification: re-run into a separate output dir to confirm convergence
 # (use a config with a different RECONCILE_BASE_DIR, e.g. pointing to a run2 directory)
 bash sync-target-from-source.sh \
   --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
   --generate-only --include-remote-cache --aql-style sha1-prefix \
-  --aql-page-size 5000 --folder-parallel 16
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
 
-bash sync-target-from-source.sh \
-  --config test/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix \
-  --aql-page-size 5000 --folder-parallel 16
 ```
 
 After the verification run, the generated scripts (`03_to_sync.sh`, `05_to_sync_stats.sh`, etc.) should have zero or near-zero lines, confirming that source and target are in sync.
