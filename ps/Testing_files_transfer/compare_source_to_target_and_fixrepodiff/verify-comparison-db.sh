@@ -94,10 +94,6 @@ echo ""
 echo "--- c) Cross-instance mapping ---"
 jf compare query "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
 
-echo ""
-echo "--- Exclusion counts by reason category (delays excluded) for source=${SOURCE} ---"
-jf compare query "SELECT reason_category, COUNT(*) AS count FROM comparison_reasons WHERE reason_category != 'delay' AND source = '${SOURCE}' GROUP BY reason_category ORDER BY count DESC"
-
 if [[ -n "$REPOS" ]]; then
   IFS=',' read -ra _repos <<< "$REPOS"
   for _repo in "${_repos[@]}"; do
