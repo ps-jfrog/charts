@@ -253,6 +253,65 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 **Implemented:** Created standalone [verify-comparison-db.sh](verify-comparison-db.sh) script that accepts `--source <authority>` and `--repos <csv>` (with env fallbacks `SH_ARTIFACTORY_AUTHORITY` / `SH_ARTIFACTORY_REPOS`). Runs four `jf compare query` calls: exclusion rules, cross-instance mapping, reason category counts (filtered by source), and excluded files sample (per repo). Graceful exit if `jf compare query` is not available. `sync-target-from-source.sh` Step 6 calls this script. Updated `QUICKSTART.md` "Inspecting comparison.db" section with `jf compare query` alternatives (comment lines) for all queries in sections a–i and "Verifying excluded files". Added introductory tip about `jf compare query` as a `sqlite3` alternative.
 
+### 1.14 Enhanced per-repository verification report
+
+- [x] **T21** Enhance [verify-comparison-db.sh](verify-comparison-db.sh) to replace the current generic "excluded files sample" (lines 94–108) with a structured **per-repository report** that separately shows missing files, delayed files, and excluded files — each with a count and a listing. The report should iterate over each repo in `--repos` (or `SH_ARTIFACTORY_REPOS`) and for each repo print:
+
+  **1) Missing files (in source, not in target — excluding delay and excluded):**
+  - **Count:**
+    ```
+    jf compare query "SELECT COUNT(*) AS missing_count FROM missing WHERE source = '${SOURCE}' AND source_repo = '${REPO}'"
+    ```
+  - **List (first 20):**
+    ```
+    jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing WHERE source = '${SOURCE}' AND source_repo = '${REPO}' LIMIT 20"
+    ```
+  The `missing` view (alias for `sync_missing`) already filters out excluded and delay artifacts (`exclusions.reason IS NULL`), so this shows only actionable artifacts that need to be synced.
+
+  **2) Delay files (deferred to a later phase, e.g. Docker manifests):**
+  - **Count:**
+    ```
+    jf compare query "SELECT COUNT(*) AS delay_count FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${REPO}' AND reason_category = 'delay'"
+    ```
+  - **List (first 20):**
+    ```
+    jf compare query "SELECT source, repository_name, uri, reason FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${REPO}' AND reason_category = 'delay' LIMIT 20"
+    ```
+
+  **3) Excluded files (skipped by exclusion rules, e.g. `.jfrog/`, npm metadata):**
+  - **Count:**
+    ```
+    jf compare query "SELECT COUNT(*) AS excluded_count FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${REPO}' AND reason_category = 'exclude'"
+    ```
+  - **List (first 20):**
+    ```
+    jf compare query "SELECT source, repository_name, uri, reason FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${REPO}' AND reason_category = 'exclude' LIMIT 20"
+    ```
+
+  **Output format per repo:**
+  ```
+  === Repository: __infra_local_docker ===
+
+  --- Missing files (in source, not in target): 136 ---
+  <table output from jf compare query>
+
+  --- Delay files (deferred): 24 ---
+  <table output from jf compare query>
+
+  --- Excluded files (skipped by rules): 2 ---
+  <table output from jf compare query>
+  ```
+
+  **Implementation details:**
+  - Keep the existing global queries (exclusion rules, cross-instance mapping, reason-category counts) unchanged.
+  - Replace the current per-repo loop (lines 98–108 in `verify-comparison-db.sh`) with the three-section report above.
+  - Each count query should be run first, with its result printed in the section header. Then the listing query follows.
+  - The `missing` view is the correct source for missing files (it already excludes delays and exclusions via `exclusions.reason IS NULL`).
+  - The `comparison_reasons` view with `reason_category = 'delay'` or `reason_category = 'exclude'` is the correct source for delay and excluded files respectively.
+  - Update `QUICKSTART.md` and `README-verify-comparison-db.md` to document the new report format.
+
+  **Implemented:** Replaced the generic per-repo `comparison_reasons` loop in `verify-comparison-db.sh` with three sub-sections per repository: (1) Missing files — count + first 20 from `missing` view, (2) Delay files — count + first 20 from `comparison_reasons WHERE reason_category = 'delay'`, (3) Excluded files — count + first 20 from `comparison_reasons WHERE reason_category = 'exclude'`. Count queries use `--csv --header=false` to extract the raw number for the section header. Listing queries only run when count > 0. Updated `QUICKSTART.md` script reference table and `README-verify-comparison-db.md` (description, options table, "What it displays" section with sample output).
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

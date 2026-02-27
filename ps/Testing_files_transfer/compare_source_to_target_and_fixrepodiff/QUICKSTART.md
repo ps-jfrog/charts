@@ -355,7 +355,7 @@ WHERE reason_category != 'delay';
 # Or: jf compare query "SELECT COUNT(*) AS count_excluding_delay FROM comparison_reasons WHERE reason_category != 'delay'"
 ```
 
-Count grouped by reason category (excluding delays):
+Count of excluded artifacts (excluding delayed ones) grouped by reason category :
 
 ```bash
 sqlite3 -header -column comparison.db "
@@ -393,6 +393,8 @@ __infra_local_docker  app2    managed by artifactory  1
 sv-docker-local-copy  app3                            2
 sv-docker-local-copy  app3    managed by artifactory  1
 ```
+**Note:** 167 items  ( includes the "/" folder) + 24 ( delay files) + 1  ( i.e `/.jfrog/repository.catalog` managed by artifactory) - 1 (i.e "/" folder) = 191 items that are in 
+source repository bit missing in target repository.
 
 Rows with an empty `reason` are artifacts that passed exclusion rules (eligible for sync). Rows with a reason like `delay: docker` or `managed by artifactory` show why those artifacts were excluded or delayed.
 
@@ -427,7 +429,7 @@ The `type` column shows `missing` for artifacts on the source but absent on the 
 
 ### g) Mismatch summary
 
-Count of mismatches grouped by repo and type:
+Count of files that exist on the source but are missing on the target artifactory (mismatch)  excluding the `delay` files ,  grouped by repo and type:
 
 ```bash
 sqlite3 -header -column comparison.db "
@@ -447,17 +449,19 @@ __infra_local_docker  app2  app3  missing  136
 
 > **Note:** Files marked for delay (e.g. Docker manifests) are excluded from the mismatch count. The count here reflects only non-delayed artifacts that are missing on the target. Use `--run-delayed` to sync delayed artifacts separately.
 
-### h) Missing artifacts (sample)
+### h) Missing files (sample)
 
-Show the first 10 artifacts that exist on the source but are missing on the target:
+Show the first 10 files that exist on the source but are missing on the target (excluding the `delay` files ):
 
 ```bash
 sqlite3 -header -column comparison.db "
 SELECT source, source_repo, target, target_repo, path, sha1_source, size_source
 FROM missing
+WHERE source = 'app2'
+AND source_repo = '__infra_local_docker'
 LIMIT 10;
 "
-# Or: jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing LIMIT 10"
+# Or: jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing WHERE source = 'app2' AND source_repo = '__infra_local_docker' LIMIT 10"
 ```
 
 Example output:
@@ -470,10 +474,39 @@ app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-
 app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__3e4d8beb5aa0128090970a8173fa17efeb13ac158...    c61fae9bb9dc0a1546c0eeac8f1a6d2de5db4947  167
 app2    __infra_local_docker  app3    sv-docker-local-copy  /app-core-infra/app-core/101.1.0/sha256__61573f02fa22c37f2a927ae9483828ef6ed760a27...    26f772b9f62ddb043099a94f4e3a4e1d1864d9e6  3146941
 ```
+### i) delay count
+Count of `delay` files that exist on the source but are missing on the target artifactory (mismatch)   ,  grouped by repository_name :
 
-### i) Folder count
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, repository_name, count(*) AS delay_file_count
+FROM comparison_reasons
+where source = 'app2'
+and reason_category= 'delay'
+group by repository_name;
+"
+# Or: jf compare query "SELECT source, repository_name, count(*) AS delay_file_count FROM comparison_reasons WHERE source = 'app2' AND reason_category = 'delay' GROUP BY repository_name"
+```
 
-Count the number of folders crawled for a repository (folders have no checksums):
+### j) Missing `delay` files (sample)
+
+Show the first 10 `delay` files that exist on the source repo but are missing on the target repo:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, repository_name, uri
+FROM comparison_reasons
+where source = 'app2'
+and reason_category= 'delay'
+AND repository_name = '__infra_local_docker'
+LIMIT 10;
+"
+# Or: jf compare query "SELECT source, repository_name, uri FROM comparison_reasons WHERE source = 'app2' AND reason_category = 'delay' AND repository_name = '__infra_local_docker' LIMIT 10"
+```
+
+### k) Folder count
+
+Count the number of folders crawled for a repository including the "/" i.e root folder (folders have no checksums):
 
 ```bash
 sqlite3 comparison.db "
@@ -484,14 +517,15 @@ WHERE repository_name='__infra_local_docker'
 "
 # Or: jf compare query "SELECT COUNT(*) AS folder_count FROM artifacts WHERE repository_name='__infra_local_docker' AND sha1 IS NULL AND sha2 IS NULL AND md5 IS NULL"
 ```
+Output : 31
 
-You can cross-check this against Artifactory's storage info:
+You can cross-check this against Artifactory's storage info and this does not include tbe "/" i.e root folder (  so it is one 1 less than previous output count):
 
 ```bash
 jf rt curl "/api/storageinfo" --server-id=app2 2>/dev/null \
   | jq '.repositoriesSummaryList[] | select(.repoKey=="__infra_local_docker") | .foldersCount'
 ```
-
+Output : 30
 > **Note:** The storage info may be cached. Refresh it with `jf rt curl -X POST "/api/storageinfo/calculate" --server-id=app2` if the numbers look stale.
 
 ### Verifying excluded files
@@ -519,7 +553,7 @@ WHERE a.source = 'psazuse'
 # Or: jf compare query "SELECT COUNT(*) AS excluded_count FROM artifacts a JOIN exclusion_rules r ON r.enabled = 1 AND a.uri LIKE r.pattern WHERE a.source = 'psazuse' AND a.repository_name = 'npmjs-remote-cache'"
 ```
 
-**List of excluded files with the matching exclusion rule:**
+**List of excluded files ( in uri format) and the reason i.e exclusion rule:**
 
 ```bash
 sqlite3 -header -column comparison.db "
@@ -543,7 +577,7 @@ ORDER BY a.uri;
 | **compare-and-reconcile.sh** | Compare source vs target and generate reconciliation scripts. Requires **--b4upload** or **--after-upload**. |
 | **runcommand_in_parallel_from_file.sh** | Run commands from a file in parallel; `--log-success` logs successful commands; args: `<command_file> <failure_log_file> <max_parallel>`. |
 | **sync-target-from-source.sh** | One-shot: run Steps 2–6 for you (compare b4-upload → run 01–06 → compare after-upload → run 07–09 → verify). Set env vars (Step 1) then run; see [README.md](README.md). |
-| **verify-comparison-db.sh** | Post-sync verification: queries `comparison.db` via `jf compare query` to display exclusion rules, repo mapping, reason-category counts, and excluded files sample. Called by `sync-target-from-source.sh` Step 6, or run standalone with `--source <authority> --repos <csv>`. |
+| **verify-comparison-db.sh** | Post-sync verification: queries `comparison.db` via `jf compare query` to display exclusion rules, repo mapping, reason-category counts, and a per-repo breakdown of missing files (in source, not in target), delay files (deferred), and excluded files (skipped by rules) — each with count and listing. Called by `sync-target-from-source.sh` Step 6, or run standalone with `--source <authority> --repos <csv>`. |
 
 ---
 

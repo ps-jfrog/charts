@@ -2,7 +2,7 @@
 #
 # Post-sync verification: queries comparison.db via "jf compare query" to
 # display exclusion rules, repo mapping, reason-category counts, and a
-# sample of excluded/delayed files.
+# per-repo breakdown of missing files, delay files, and excluded files.
 #
 # Usage:
 #   verify-comparison-db.sh --source <authority> [--repos <csv>]
@@ -36,7 +36,10 @@ Queries comparison.db via "jf compare query" to display:
   a) Exclusion rules
   c) Cross-instance mapping
   Reason-category counts (excluding delays) for the given source
-  Excluded/delayed files sample per repo (when --repos is set)
+  Per-repo report (when --repos is set):
+    - Missing files count and listing (in source, not in target)
+    - Delay files count and listing (deferred, e.g. Docker manifests)
+    - Excluded files count and listing (skipped by exclusion rules)
 
 Options:
   --source <authority>  Source authority name (e.g. app2).
@@ -92,17 +95,35 @@ echo "--- c) Cross-instance mapping ---"
 jf compare query "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
 
 echo ""
-echo "--- Count grouped by reason category (excluding delays) for source=${SOURCE} ---"
+echo "--- Exclusion counts by reason category (delays excluded) for source=${SOURCE} ---"
 jf compare query "SELECT reason_category, COUNT(*) AS count FROM comparison_reasons WHERE reason_category != 'delay' AND source = '${SOURCE}' GROUP BY reason_category ORDER BY count DESC"
 
 if [[ -n "$REPOS" ]]; then
-  echo ""
-  echo "--- Excluded files sample (source=${SOURCE}, per repo) ---"
   IFS=',' read -ra _repos <<< "$REPOS"
   for _repo in "${_repos[@]}"; do
     _repo="$(echo "$_repo" | xargs)"
     echo ""
-    echo "  Repository: $_repo"
-    jf compare query "SELECT source, repository_name, uri, reason, reason_category FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${_repo}' LIMIT 10"
+    echo "=== Repository: $_repo ==="
+
+    _missing_count=$(jf compare query --csv --header=false "SELECT COUNT(*) FROM missing WHERE source = '${SOURCE}' AND source_repo = '${_repo}'" 2>/dev/null | tr -d '[:space:]') || true
+    echo ""
+    echo "--- Missing files (in source, not in target): ${_missing_count:-0} ---"
+    if [[ "${_missing_count:-0}" != "0" ]]; then
+      jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing WHERE source = '${SOURCE}' AND source_repo = '${_repo}' LIMIT 20"
+    fi
+
+    _delay_count=$(jf compare query --csv --header=false "SELECT COUNT(*) FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${_repo}' AND reason_category = 'delay'" 2>/dev/null | tr -d '[:space:]') || true
+    echo ""
+    echo "--- Delay files (deferred): ${_delay_count:-0} ---"
+    if [[ "${_delay_count:-0}" != "0" ]]; then
+      jf compare query "SELECT source, repository_name, uri, reason FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${_repo}' AND reason_category = 'delay' LIMIT 20"
+    fi
+
+    _excluded_count=$(jf compare query --csv --header=false "SELECT COUNT(*) FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${_repo}' AND reason_category = 'exclude'" 2>/dev/null | tr -d '[:space:]') || true
+    echo ""
+    echo "--- Excluded files (skipped by rules): ${_excluded_count:-0} ---"
+    if [[ "${_excluded_count:-0}" != "0" ]]; then
+      jf compare query "SELECT source, repository_name, uri, reason FROM comparison_reasons WHERE source = '${SOURCE}' AND repository_name = '${_repo}' AND reason_category = 'exclude' LIMIT 20"
+    fi
   done
 fi

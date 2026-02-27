@@ -15,7 +15,7 @@ This script automates **Steps 2 through 6** of [QUICKSTART.md](QUICKSTART.md): i
 | Step 3 | **Step 3** | Run before-upload scripts 01–06 via `runcommand_in_parallel_from_file.sh`. 01/02 skippable (`--skip-consolidation`); 04 skipped by default (`--run-delayed` to include). For 03/04: same-URL uses `jf rt cp`; different-URL groups by SHA1. For 06: filters out sync-only lines via `filter_sync_only_folder_props.sh`, running `06a` instead. |
 | Step 4 | **Step 4** | Run `compare-and-reconcile.sh --after-upload ...`; output in `after_upload/` |
 | Step 5 | **Step 5** | Run after-upload scripts 07, 08 via `runcommand_in_parallel_from_file.sh`. Script 09 is skipped by default; use `--run-folder-stats` to include it. |
-| Step 6 | *(new)* | Post-sync verification: runs [verify-comparison-db.sh](verify-comparison-db.sh) to query `comparison.db` via `jf compare query` — displays exclusion rules, repo mapping, reason-category counts, and excluded files sample. |
+| Step 6 | *(new)* | Post-sync verification: runs [verify-comparison-db.sh](verify-comparison-db.sh) to query `comparison.db` via `jf compare query` — displays exclusion rules, repo mapping, reason-category counts, and a per-repo breakdown of missing files, delay files, and excluded files (each with count and listing). |
 
 The script resolves its own directory so it can call `compare-and-reconcile.sh` and `runcommand_in_parallel_from_file.sh` correctly no matter where you run it from.
 
@@ -143,7 +143,7 @@ This runs all steps in sequence:
 2. **Step 3:** Execute before-upload scripts (`01`–`06`, including `04` when `--run-delayed` is used)
 3. **Step 4:** After-upload compare (generates scripts `07`–`09`)
 4. **Step 5:** Execute after-upload scripts (`07`–`09`, including `09` when `--run-folder-stats` is used)
-5. **Step 6:** Post-sync verification — runs `verify-comparison-db.sh` to query `comparison.db` and display exclusion rules, repo mapping, reason-category counts, and excluded files sample
+5. **Step 6:** Post-sync verification — runs `verify-comparison-db.sh` to query `comparison.db` and display exclusion rules, repo mapping, reason-category counts, and a per-repo breakdown of missing files, delay files, and excluded files
 
 > **Tip:** `--include-remote-cache` is harmless for non-remote repos (LOCAL, FEDERATED) — the flag is only checked for REMOTE-type repos and silently ignored otherwise. You can include it consistently across all your commands.
 

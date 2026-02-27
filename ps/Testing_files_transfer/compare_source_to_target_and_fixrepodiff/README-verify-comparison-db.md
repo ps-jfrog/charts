@@ -1,6 +1,6 @@
 # verify-comparison-db.sh — Post-sync verification queries
 
-Queries `comparison.db` via `jf compare query` to display a summary of exclusion rules, repo mapping, reason-category counts, and a sample of excluded/delayed files. Requires the `jf compare query` subcommand (see Task 30 in the plugin docs).
+Queries `comparison.db` via `jf compare query` to display a summary of exclusion rules, repo mapping, reason-category counts, and a per-repo breakdown of missing files, delay files, and excluded files — each with count and listing. Requires the `jf compare query` subcommand (see Task 30 in the plugin docs).
 
 This script is called automatically by `sync-target-from-source.sh` as **Step 6**, but can also be run **standalone** at any time after a sync to re-inspect the comparison database without re-running the full workflow.
 
@@ -15,19 +15,41 @@ bash verify-comparison-db.sh --source <authority> [--repos <csv>]
 | Option | Description |
 |--------|-------------|
 | `--source <authority>` | Source authority name (e.g. `app2`). Used to filter reason-category counts and excluded-files queries. **Required** (or set env `SH_ARTIFACTORY_AUTHORITY`). |
-| `--repos <csv>` | Comma-separated list of source repo names. When set, a per-repo sample of excluded/delayed files is shown. Falls back to env `SH_ARTIFACTORY_REPOS`. |
+| `--repos <csv>` | Comma-separated list of source repo names. When set, a per-repo report of missing, delay, and excluded files is shown — each with count and listing. Falls back to env `SH_ARTIFACTORY_REPOS`. |
 | `-h`, `--help` | Show help and exit. |
 
 ---
 
 ## What it displays
 
-| Section | Query |
-|---------|-------|
+| Section | Description |
+|---------|-------------|
 | **a) Exclusion rules** | All path-based exclusion rules from `exclusion_rules` (pattern, reason, priority). |
 | **c) Cross-instance mapping** | How source and target repos were paired (`exact_match`, `normalized_match`, or `explicit_sync`), with artifact counts per side. |
 | **Reason-category counts** | Count of excluded artifacts grouped by `reason_category` (excluding `delay`), filtered to the given `--source`. |
-| **Excluded files sample** | First 10 rows from `comparison_reasons` for each repo in `--repos`, showing URI, reason, and category. Only shown when `--repos` is provided. |
+
+When `--repos` is set, the following per-repo report is shown for each repository:
+
+| Sub-section | Source | Description |
+|-------------|--------|-------------|
+| **Missing files** | `missing` view | Artifacts in source but not in target (excludes delays and exclusions). Count + first 20 rows. |
+| **Delay files** | `comparison_reasons` (`reason_category = 'delay'`) | Deferred artifacts (e.g. Docker manifests). Count + first 20 rows. |
+| **Excluded files** | `comparison_reasons` (`reason_category = 'exclude'`) | Skipped by exclusion rules. Count + first 20 rows. |
+
+**Sample output:**
+
+```
+=== Repository: __infra_local_docker ===
+
+--- Missing files (in source, not in target): 136 ---
+<table output from jf compare query>
+
+--- Delay files (deferred): 24 ---
+<table output from jf compare query>
+
+--- Excluded files (skipped by rules): 2 ---
+<table output from jf compare query>
+```
 
 ---
 
@@ -69,7 +91,7 @@ bash verify-comparison-db.sh
 bash verify-comparison-db.sh --source app2
 ```
 
-This shows exclusion rules, cross-instance mapping, and reason-category counts but skips the per-repo excluded-files sample.
+This shows exclusion rules, cross-instance mapping, and reason-category counts but skips the per-repo missing/delay/excluded breakdown.
 
 ---
 
