@@ -110,7 +110,7 @@ bash sync-target-from-source.sh \
 # Pass 2: execute generated scripts, run after-upload compare, and run 07–09
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --run-only --include-remote-cache --run-folder-stats --aql-style sha1-prefix \
+  --run-only --include-remote-cache --run-folder-stats --run-delayed  --aql-style sha1-prefix \
   --aql-page-size 5000 --folder-parallel 16 \
   --verification-csv --verification-no-limit
 
@@ -241,6 +241,44 @@ bash verify-comparison-db.sh --source app2 --repos "__infra_local_docker,example
 These flags can also be passed through `sync-target-from-source.sh` via `--verification-no-limit` and `--verification-csv [dir]` (defaults to `RECONCILE_BASE_DIR` when dir is omitted).
 
 See [README-verify-comparison-db.md](README-verify-comparison-db.md) for full options and examples.
+
+---
+
+## Diagnosing missing file types with --generate-only
+
+The `--generate-only` flag is useful not only for reviewing scripts before execution, but also for **diagnosing why artifacts failed to transfer** via `jf rt transfer-files` or Artifactory push replication. The generated `03_to_sync.sh` (missing files) and `04_to_sync_delayed.sh` (delayed files), along with the CSV report, show exactly which artifacts are in the source but not in the target.
+
+To determine the **file extensions** of the missing artifacts:
+
+```bash
+grep -oE '\.[A-Za-z0-9]+\" \"/tmp/' b4_upload/03_to_sync.sh \
+  | sed 's/" "\/tmp\///' \
+  | sort \
+  | uniq -c \
+  | sort -nr
+```
+
+For example, if the source repository is a Maven repository and the output shows:
+
+```
+12130 .nupkg
+  367 .zip
+   69 .h
+    2 .lib
+    2 .dll
+    1 .exe
+    1 .cnf
+    1 .c
+```
+
+This reveals that the missing artifacts are **not Maven artifacts** (e.g. `.nupkg`, `.dll`, `.exe`). This is a common reason why `jf rt transfer-files` or Artifactory push replication could not transfer them — the target Maven repository may reject artifacts with non-Maven extensions. The same command can be applied to `04_to_sync_delayed.sh` to inspect delayed files.
+
+If after reviewing the generated scripts and CSV reports you decide you **do want to transfer these files**, proceed with:
+
+- **Two-pass approach:** `bash sync-target-from-source.sh --config <file> --run-only --include-remote-cache --run-folder-stats --run-delayed ...`
+- **One-shot approach:** `bash sync-target-from-source.sh --config <file> --include-remote-cache --run-folder-stats --run-delayed ...`
+
+The `--run-delayed` flag ensures `04_to_sync_delayed.sh` is executed, and `--run-folder-stats` includes folder stats reconciliation.
 
 ---
 
