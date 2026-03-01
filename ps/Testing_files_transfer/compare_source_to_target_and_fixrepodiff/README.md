@@ -282,6 +282,88 @@ The `--run-delayed` flag ensures `04_to_sync_delayed.sh` is executed, and `--run
 
 ---
 
+## Verifying that missing artifacts exist in the source
+
+If `03_to_sync.sh` lists artifacts and someone claims those files do not exist in the source repository, you can prove they exist by querying `comparison.db`. The `artifacts` table is populated by AQL queries against the Artifactory instance — if a row exists with the source authority, Artifactory's AQL API returned it during the crawl.
+
+**Check if a specific artifact exists in the source crawl:**
+
+```bash
+jf compare query "SELECT source, repository_name, uri, sha1, sha2, size FROM artifacts WHERE source = '<source-authority>' AND repository_name = '<repo>' AND uri LIKE '%<filename>'"
+```
+
+Or with `sqlite3`:
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT source, repository_name, uri, sha1, sha2, size
+FROM artifacts
+WHERE source = '<source-authority>'
+  AND repository_name = '<repo>'
+  AND uri LIKE '%<filename>';
+"
+```
+
+**Verify it is in the `missing` view (source has it, target does not):**
+
+```bash
+jf compare query "SELECT source, source_repo, target, target_repo, path, sha1_source, size_source FROM missing WHERE source = '<source-authority>' AND path LIKE '%<filename>'"
+```
+
+**Count all files with a specific extension in the source crawl:**
+
+```bash
+sqlite3 -header -column comparison.db "
+SELECT COUNT(*) AS nupkg_count
+FROM artifacts
+WHERE source = '<source-authority>'
+  AND repository_name = '<repo>'
+  AND uri LIKE '%.nupkg';
+"
+```
+
+**Verify directly via the Artifactory API:**
+
+```bash
+jf rt curl "/api/storage/<repo>/<path-to-file>" --server-id=<source-authority>
+```
+
+> **Tip:** You can also search for artifacts using AQL via `jf rt s`. For example, to check if there are any artifacts under a specific path:
+>
+> ```bash
+> tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
+> {
+>   "files": [
+>     {
+>       "pattern": "claims-maven-dev-custom/repositories/**/*",
+>       "type": "file"
+>     }
+>   ]
+> }
+> EOF
+> jf rt s --spec "$tmp" --server-id=source-server; rm -f "$tmp"
+> ```
+>
+> If the artifacts are not found, check whether they were deleted and moved to the **trashcan**:
+>
+> ```bash
+> tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
+> {
+>   "files": [
+>     {
+>       "pattern": "auto-trashcan/**/Commercial.AccountInfo.Process.Models.1.0.53-beta.61859.nupkg",
+>       "type": "file"
+>     }
+>   ]
+> }
+> EOF
+> jf rt s --spec "$tmp" --server-id=source-server; rm -f "$tmp"
+> ```
+>
+> Replace the pattern and `--server-id` with your actual repo path and authority name.
+
+---
+
 ## Relation to manual QUICKSTART
 
 - **Manual:** You run Steps 1–5 yourself (set env, run compare-and-reconcile twice, run each generated script with `runcommand_in_parallel_from_file.sh`).
