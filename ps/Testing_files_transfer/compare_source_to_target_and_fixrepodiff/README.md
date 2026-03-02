@@ -372,9 +372,9 @@ After running `--generate-only` to produce before-upload scripts (03–06) for s
 
 ```bash
 bash retarget-sync-scripts.sh \
-  --source-dir /path/to/original/reconcile-dir \
+  --source-dir "$RECONCILE_BASE_DIR" \
   --target-dir /path/to/new/reconcile-dir \
-  --old-repo npmjs-remote-cache \
+  --old-repo "$CLOUD_ARTIFACTORY_REPOS" \
   --new-repo my-other-repo
 ```
 
