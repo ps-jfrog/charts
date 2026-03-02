@@ -312,6 +312,64 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Implemented:** Replaced the generic per-repo `comparison_reasons` loop in `verify-comparison-db.sh` with three sub-sections per repository: (1) Missing files — count + first 20 from `missing` view, (2) Delay files — count + first 20 from `comparison_reasons WHERE reason_category = 'delay'`, (3) Excluded files — count + first 20 from `comparison_reasons WHERE reason_category = 'exclude'`. Count queries use `--csv --header=false` to extract the raw number for the section header. Listing queries only run when count > 0. Updated `QUICKSTART.md` script reference table and `README-verify-comparison-db.md` (description, options table, "What it displays" section with sample output).
 
+### 1.15 Retarget sync scripts to a different target repo
+
+- [x] **T22** Create a helper script `retarget-sync-scripts.sh` that copies and rewrites generated before-upload scripts (03–06) to target a **different repository**, then guides the user through running them and completing the after-upload phase (07–09).
+
+  **Use case:** After running `--generate-only` against source repo A → target repo B, the user wants to sync the same artifacts to a different target repo C (on the same or different Artifactory instance). Instead of re-running the full compare workflow, the helper script reuses the already-generated scripts.
+
+  **What the script does:**
+
+  1. **Inputs:**
+     - `--source-dir <dir>` — path to the original `RECONCILE_BASE_DIR` containing `b4_upload/` with generated scripts (03–06).
+     - `--target-dir <dir>` — path to the new `RECONCILE_BASE_DIR` for the retargeted run. Created if it doesn't exist.
+     - `--old-repo <name>` — the original target repo name to replace (e.g. `npmjs-remote-cache`).
+     - `--new-repo <name>` — the new target repo name (e.g. `my-other-repo`).
+     - Optionally `--old-server-id <id>` and `--new-server-id <id>` if the target Artifactory authority also changes.
+
+  2. **Copy and rewrite before-upload scripts:**
+     - Copy `03_to_sync.sh`, `04_to_sync_delayed.sh`, `05_to_sync_stats.sh`, `06_to_sync_folder_props.sh` from `<source-dir>/b4_upload/` to `<target-dir>/b4_upload/`.
+     - Run `sed` to replace `"<old-repo>/` with `"<new-repo>/` in all copied scripts.
+     - If `--old-server-id` / `--new-server-id` are provided, also replace `--server-id=<old>` with `--server-id=<new>` in the upload commands (only on the `jf rt u` / `jf rt cp` side, not the download side).
+     - Print a summary: number of lines in each copied/rewritten script and the replacements made.
+
+  3. **Run the rewritten before-upload scripts (03–06):**
+     - Run each rewritten script via `runcommand_in_parallel_from_file.sh`, same as `sync-target-from-source.sh` Step 3 does.
+     - Respect `--max-parallel <N>` (default 10).
+     - Skip scripts that don't exist or are empty (e.g. if `04_to_sync_delayed.sh` was not generated).
+
+  4. **Print next-steps guidance:**
+     After running 03–06, print instructions for generating and running 07–09 with the new target repo. For example:
+     ```
+     === Before-upload scripts (03–06) complete ===
+
+     To generate and run after-upload scripts (07–09) for the new target repo,
+     create a config file with:
+       export CLOUD_ARTIFACTORY_REPOS="my-other-repo"
+       export RECONCILE_BASE_DIR="/path/to/target-dir"
+       (keep all other env vars the same as your original config)
+
+     Then run:
+       bash sync-target-from-source.sh \
+         --config <new-config-file> \
+         --run-only --include-remote-cache --run-folder-stats \
+         --aql-style sha1-prefix --aql-page-size 5000 --folder-parallel 16 \
+         --verification-csv --verification-no-limit
+
+     Note: --run-only will skip Step 2 (before-upload compare, since scripts already
+     exist in b4_upload/) and proceed with Step 4 (after-upload compare against
+     my-other-repo) followed by Steps 5–6.
+     ```
+
+  **Implementation details:**
+  - The script should validate that the source dir exists and contains at least `03_to_sync.sh`.
+  - The `sed` replacement pattern should match the repo name at the start of the upload path: `" "<old-repo>/` → `" "<new-repo>/`. This handles both `jf rt u` commands (where the repo is the first path component of the upload target) and `jf rt cp` commands (where the repo prefix appears similarly).
+  - For `05_to_sync_stats.sh` and `06_to_sync_folder_props.sh`, the repo name appears in `jf rt curl` or `jf rt sp` commands — the replacement pattern may differ (e.g. `/api/storage/<repo>/` or `"<repo>/path"`). The script should handle both patterns.
+  - Document the script in `README.md` (new section after "Verifying that missing artifacts exist in the source") and create a `README-retarget-sync-scripts.md`.
+  - Add the script to the `QUICKSTART.md` script reference table.
+
+  **Implemented:** Created `retarget-sync-scripts.sh` with `--source-dir`, `--target-dir`, `--old-repo`, `--new-repo`, and optional `--old-server-id`/`--new-server-id` flags. Copies 03–06 from source `b4_upload/` to target `b4_upload/` and rewrites repo names using tailored sed patterns per script type: `"OLD/` → `"NEW/` for 03/04/06, `"/OLD/` → `"/NEW/` for 05 (curl API paths). Server-id replacement on 03/04 targets only the upload side (after `&&`). Prints summary with line counts and substitution counts, followed by next-steps guidance (create config with new `CLOUD_ARTIFACTORY_REPOS`/`RECONCILE_BASE_DIR`, run `sync-target-from-source.sh --run-only --skip-consolidation --run-delayed`). Added "Retargeting sync scripts to a different repository" section to `README.md`, created `README-retarget-sync-scripts.md` with full documentation and examples, added entry to `QUICKSTART.md` script reference table.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

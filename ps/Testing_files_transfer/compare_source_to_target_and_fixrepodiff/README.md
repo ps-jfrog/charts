@@ -364,6 +364,67 @@ jf rt curl "/api/storage/<repo>/<path-to-file>" --server-id=<source-authority>
 
 ---
 
+## Retargeting sync scripts to a different repository
+
+After running `--generate-only` to produce before-upload scripts (03–06) for source → target-A, you may want to sync the same artifacts to a **different target repo** (target-B) without re-running the full compare workflow. The `retarget-sync-scripts.sh` helper copies and rewrites the generated scripts so they upload to the new target, then prints step-by-step guidance for completing the after-upload phase (07–09).
+
+**Step 1 — Rewrite scripts:**
+
+```bash
+bash retarget-sync-scripts.sh \
+  --source-dir /path/to/original/reconcile-dir \
+  --target-dir /path/to/new/reconcile-dir \
+  --old-repo npmjs-remote-cache \
+  --new-repo my-other-repo
+```
+
+This copies `03_to_sync.sh`, `04_to_sync_delayed.sh`, `05_to_sync_stats.sh`, and `06_to_sync_folder_props.sh` from `<source-dir>/b4_upload/` to `<target-dir>/b4_upload/`, replacing every occurrence of the old target repo name with the new one. If the target Artifactory authority also changes, add `--old-server-id` and `--new-server-id` (only the upload-side server-id is replaced in 03/04; the download/source side is left untouched).
+
+**Step 2 — Create a new config file** (e.g. `env_retarget.sh`):
+
+```bash
+# Copy from your original config, then change these lines:
+export CLOUD_ARTIFACTORY_REPOS="my-other-repo"
+export RECONCILE_BASE_DIR="/path/to/new/reconcile-dir"
+# Keep all other env vars (SH_ARTIFACTORY_*, COMPARE_*, etc.) the same.
+```
+
+**Step 3 — Run with `--run-only`:**
+
+```bash
+bash sync-target-from-source.sh \
+  --config env_retarget.sh \
+  --run-only --skip-consolidation \
+  --include-remote-cache  --run-delayed --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \ 
+  --verification-csv --verification-no-limit
+```
+
+`--run-only` skips Step 2 (before-upload compare) since the rewritten scripts already exist in `b4_upload/`. It proceeds with:
+
+- **Step 3:** Execute before-upload scripts (03–06) — uploads to `my-other-repo`
+- **Step 4:** After-upload compare against `my-other-repo`
+- **Step 5:** Generate and execute after-upload scripts (07–09)
+- **Step 6:** Post-sync verification
+
+Use `--aql-style`, `--aql-page-size`, `--folder-parallel`, `--include-remote-cache` as needed (same values as your original run).
+Do not use the  `--run-folder-stats` as it may be huge. Review the generated `after_upload/09_to_sync_folder_stats_as_properties.sh` and run it separately if necessary using below steps:
+```
+cd /path/to/your/RECONCILE_BASE_DIR/after_upload
+
+bash /path/to/runcommand_in_parallel_from_file.sh \
+  --log-success \
+  ./09_to_sync_folder_stats_as_properties.sh \
+  ./09_to_sync_folder_stats_as_properties_out.txt \
+  16
+```
+
+> **Note:** `--skip-consolidation` is recommended because the retargeted `b4_upload/` does not contain 01/02 consolidation scripts. `--run-delayed` ensures `04_to_sync_delayed.sh` is executed.
+
+See [README-retarget-sync-scripts.md](README-retarget-sync-scripts.md) for full documentation.
+
+---
+
 ## Relation to manual QUICKSTART
 
 - **Manual:** You run Steps 1–5 yourself (set env, run compare-and-reconcile twice, run each generated script with `runcommand_in_parallel_from_file.sh`).
