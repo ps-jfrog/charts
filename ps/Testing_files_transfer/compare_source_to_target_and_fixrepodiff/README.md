@@ -289,20 +289,22 @@ If `03_to_sync.sh` lists artifacts and someone claims those files do not exist i
 **Check if a specific artifact exists in the source crawl:**
 
 ```bash
-jf compare query "SELECT source, repository_name, uri, sha1, sha2, size FROM artifacts WHERE source = '<source-authority>' AND repository_name = '<repo>' AND uri LIKE '%<filename>'"
+jf compare query "SELECT source, repository_name, uri, sha1, sha2, size, row_created_at, created, modified FROM artifacts WHERE source = '<source-authority>' AND repository_name = '<repo>' AND uri LIKE '%<filename>'"
 ```
 
 Or with `sqlite3`:
 
 ```bash
 sqlite3 -header -column comparison.db "
-SELECT source, repository_name, uri, sha1, sha2, size
+SELECT source, repository_name, uri, sha1, sha2, size , row_created_at, created, modified
 FROM artifacts
 WHERE source = '<source-authority>'
   AND repository_name = '<repo>'
   AND uri LIKE '%<filename>';
 "
 ```
+Note: In the Jfrog UI Tree view the “Created” and “Last Modified” time for an artifact is in `YYYYMMDD HH:MM:SS UTC`
+The row_created_at in the sqlite DB is also  in the same format.
 
 **Verify it is in the `missing` view (source has it, target does not):**
 
