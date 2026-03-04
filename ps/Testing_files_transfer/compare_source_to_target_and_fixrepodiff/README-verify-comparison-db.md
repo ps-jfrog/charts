@@ -28,6 +28,7 @@ bash verify-comparison-db.sh --source <authority> [--repos <csv>] [--no-limit] [
 |---------|-------------|
 | **a) Exclusion rules** | All path-based exclusion rules from `exclusion_rules` (pattern, reason, priority). |
 | **c) Cross-instance mapping** | How source and target repos were paired (`exact_match`, `normalized_match`, or `explicit_sync`), with artifact counts per side. |
+| **e) Exclusion summary** | Per-repo, per-reason count of excluded artifacts from the `exclusion_summary` view. |
 | **Reason-category counts** | Count of excluded artifacts grouped by `reason_category` (excluding `delay`), filtered to the given `--source`. |
 
 When `--repos` is set, the following per-repo report is shown for each repository:
@@ -107,6 +108,7 @@ Displays the full report on screen and writes CSV files to `verification_csv/`:
 verification_csv/
 ├── exclusion_rules.csv
 ├── cross_instance_mapping.csv
+├── exclusion_summary.csv
 ├── __infra_local_docker_missing.csv
 ├── __infra_local_docker_delay.csv
 ├── __infra_local_docker_excluded.csv

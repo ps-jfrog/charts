@@ -135,6 +135,11 @@ echo "--- c) Cross-instance mapping ---"
 jf compare query "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
 [[ -n "$CSV_DIR" ]] && write_csv "$CSV_DIR/cross_instance_mapping.csv" "SELECT source, source_repo, equivalence_key, target, target_repo, match_type, sync_type, source_artifact_count, target_artifact_count FROM cross_instance_mapping"
 
+echo ""
+echo "--- e) Exclusion summary ---"
+jf compare query "SELECT repository_name, source, reason, total FROM exclusion_summary ORDER BY repository_name, source, reason"
+[[ -n "$CSV_DIR" ]] && write_csv "$CSV_DIR/exclusion_summary.csv" "SELECT repository_name, source, reason, total FROM exclusion_summary ORDER BY repository_name, source, reason"
+
 if [[ -n "$REPOS" ]]; then
   IFS=',' read -ra _repos <<< "$REPOS"
   for _repo in "${_repos[@]}"; do

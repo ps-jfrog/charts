@@ -401,6 +401,24 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Implemented:** Replaced the commented-out `jf compare list` blocks in both the SH and Cloud sections with active code guarded by `if [ "$COLLECT_STATS_PROPERTIES" != "1" ]`. When stats/properties collection is skipped, the basic artifact crawl runs using the current AQL flag variables. When `COLLECT_STATS_PROPERTIES=1` (default), these blocks are skipped and the full crawl with `--collect-stats --collect-properties` runs as before.
 
+### 1.18 Add exclusion summary to verification report
+
+- [x] **T25** Add the `exclusion_summary` view to `verify-comparison-db.sh` — display it on the console and export it as a CSV when `--csv` is used.
+
+  **What to add:** A new section "e) Exclusion summary" that queries:
+  ```sql
+  SELECT repository_name, source, reason, total FROM exclusion_summary ORDER BY repository_name, source, reason
+  ```
+  This is always displayed (not gated by `--repos`), similar to sections a) and c). When `--csv <dir>` is used, also write `exclusion_summary.csv`.
+
+  **Implementation:**
+  - Add the new section after the existing "c) Cross-instance mapping" block in `verify-comparison-db.sh`.
+  - Display the query output to the console.
+  - If `CSV_DIR` is set, call `write_csv` to export it.
+  - Update `README-verify-comparison-db.md` "What it displays" section to include the new section.
+
+  **Implemented:** Added "e) Exclusion summary" section to `verify-comparison-db.sh` after the cross-instance mapping block. Always displayed (not gated by `--repos`). Queries `exclusion_summary` view and exports `exclusion_summary.csv` when `--csv` is used. Updated `README-verify-comparison-db.md` "What it displays" table and CSV directory listing.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos
