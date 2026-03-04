@@ -340,19 +340,14 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_SH" == "1" ]; then
     echo "=== Setting up Artifactory SH ==="
     _audit_run $COMMAND_NAME authority-add "$SH_ARTIFACTORY_AUTHORITY" "$SH_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$SH_ARTIFACTORY_AUTHORITY" --cli-profile="$SH_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
-    # if [ "$ARTIFACTORY_DISCOVERY_METHOD" == "artifactory_aql" ]; then
-    #     if [ -n "${SH_LIST_REPOS:-}" ]; then
-    #         _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" --collect-stats --aql-style=sha1
-    #     else
-    #         _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --collect-stats --aql-style=sha1
-    #     fi
-    # else
-    #     if [ -n "${SH_LIST_REPOS:-}" ]; then
-    #         _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS"
-    #     else
-    #         _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY"
-    #     fi
-    # fi
+    if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
+        echo "=== Listing artifacts on SH ($SH_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
+        if [ -n "${SH_LIST_REPOS:-}" ]; then
+            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+        else
+            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+        fi
+    fi
     echo ""
 fi
 
@@ -361,19 +356,14 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_CLOUD" == "1" ]; then
     echo "=== Setting up Artifactory Cloud ==="
     _audit_run $COMMAND_NAME authority-add "$CLOUD_ARTIFACTORY_AUTHORITY" "$CLOUD_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$CLOUD_ARTIFACTORY_AUTHORITY" --cli-profile="$CLOUD_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
-    # if [ "$ARTIFACTORY_DISCOVERY_METHOD" == "artifactory_aql" ]; then
-    #     if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
-    #         _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" --collect-stats --aql-style=sha1
-    #     else
-    #         _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --collect-stats --aql-style=sha1
-    #     fi
-    # else
-    #     if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
-    #         _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS"
-    #     else
-    #         _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY"
-    #     fi
-    # fi
+    if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
+        echo "=== Listing artifacts on Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
+        if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
+            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+        else
+            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+        fi
+    fi
     echo ""
 fi
 

@@ -52,6 +52,7 @@ INCLUDE_REMOTE_CACHE=""
 GENERATE_ONLY=0
 RUN_ONLY=0
 RUN_FOLDER_STATS=0
+SKIP_COLLECT_STATS_PROPERTIES=0
 VERIFICATION_CSV=""
 VERIFICATION_CSV_ENABLED=0
 VERIFICATION_NO_LIMIT=0
@@ -78,6 +79,11 @@ OPTIONS:
   --run-delayed         Run 04_to_sync_delayed.sh (default: skip it).
   --run-folder-stats    Run 09_to_sync_folder_stats_as_properties.sh in the after-upload phase
                         (default: skip it).
+  --skip-collect-stats-properties
+                        Skip the 'jf compare list --collect-stats --collect-properties' crawl in
+                        Steps 2 and 4. Only scripts 03/04 are generated; 05/06 (and 07–09) are
+                        skipped. Useful with --generate-only when you only need the artifact sync
+                        scripts and want to avoid the expensive folder crawl.
   --max-parallel <N>    Max concurrent commands when running reconciliation scripts (default: 10).
   --aql-style <style>   AQL crawl style for 'jf compare list' (e.g. sha1-prefix). Passed to
                         compare-and-reconcile.sh. Also settable via env COMPARE_AQL_STYLE.
@@ -166,6 +172,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-folder-stats)
       RUN_FOLDER_STATS=1
+      shift
+      ;;
+    --skip-collect-stats-properties)
+      SKIP_COLLECT_STATS_PROPERTIES=1
       shift
       ;;
     --verification-csv)
@@ -336,7 +346,9 @@ if [[ "$RUN_ONLY" -eq 1 ]]; then
 else
   echo "=== Step 2: Compare and reconcile (before-upload) ==="
   export RECONCILE_OUTPUT_DIR="$B4_DIR"
-  ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" --b4upload --collect-stats-properties --reconcile --target-only )
+  STEP2_ARGS=(--b4upload --reconcile --target-only)
+  [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]] && STEP2_ARGS+=(--collect-stats-properties)
+  ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP2_ARGS[@]}" )
 fi
 echo "[timing] Step 2 (before-upload compare) completed in $(format_elapsed $STEP2_START)"
 
@@ -428,7 +440,9 @@ echo "[timing] Step 3 (before-upload reconciliation) completed in $(format_elaps
 STEP4_START=$(date +%s)
 echo "=== Step 4: Compare and reconcile (after-upload) ==="
 export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
-( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" --after-upload --collect-stats-properties --reconcile --target-only )
+STEP4_ARGS=(--after-upload --reconcile --target-only)
+[[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]] && STEP4_ARGS+=(--collect-stats-properties)
+( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP4_ARGS[@]}" )
 echo "[timing] Step 4 (after-upload compare) completed in $(format_elapsed $STEP4_START)"
 
 # Step 5: After-upload reconciliation scripts

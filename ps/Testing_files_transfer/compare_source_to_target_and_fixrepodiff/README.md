@@ -100,6 +100,15 @@ Copy one as a template, edit URLs, authorities, and repo lists, then run with `-
 The recommended usage is the **two-pass** approach — generate scripts, review them, then execute — followed by a verification run into a separate output directory to confirm convergence:
 
 ```bash
+# Optional: fast generate-only for artifact sync scripts only (03/04),
+# skipping the expensive stats/properties folder crawl (no 05/06):
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+  --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+
 # Pass 1: generate before-upload scripts (01–06) for review
 bash sync-target-from-source.sh \
   --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
@@ -165,6 +174,7 @@ This runs all steps in sequence:
 | `--skip-consolidation` | Do not run `01_to_consolidate.sh` or `02_to_consolidate_props.sh`. |
 | `--run-delayed` | Run `04_to_sync_delayed.sh`. By default it is skipped (delayed manifests are often created by the stats sync). |
 | `--run-folder-stats` | Run `09_to_sync_folder_stats_as_properties.sh` in the after-upload phase (default: skip). |
+| `--skip-collect-stats-properties` | Skip the `jf compare list --collect-stats --collect-properties` crawl in Steps 2 and 4. Only scripts 03/04 are generated; 05/06 (and 07–09) are skipped. Useful with `--generate-only` when you only need the artifact sync scripts and want to avoid the expensive folder crawl. |
 | `--max-parallel <N>` | Max concurrent commands when running reconciliation scripts (default: 10). |
 | `--aql-style <style>` | AQL crawl style for `jf compare list` (e.g. `sha1-prefix`). Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_STYLE`. |
 | `--aql-page-size <N>` | AQL page size for `jf compare list` (default 500). Larger values (e.g. 5000) reduce round trips for large repos. Passed to `compare-and-reconcile.sh`. Also settable via env `COMPARE_AQL_PAGE_SIZE`. |

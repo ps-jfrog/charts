@@ -370,6 +370,37 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Implemented:** Created `retarget-sync-scripts.sh` with `--source-dir`, `--target-dir`, `--old-repo`, `--new-repo`, and optional `--old-server-id`/`--new-server-id` flags. Copies 03–06 from source `b4_upload/` to target `b4_upload/` and rewrites repo names using tailored sed patterns per script type: `"OLD/` → `"NEW/` for 03/04/06, `"/OLD/` → `"/NEW/` for 05 (curl API paths). Server-id replacement on 03/04 targets only the upload side (after `&&`). Prints summary with line counts and substitution counts, followed by next-steps guidance (create config with new `CLOUD_ARTIFACTORY_REPOS`/`RECONCILE_BASE_DIR`, run `sync-target-from-source.sh --run-only --skip-consolidation --run-delayed`). Added "Retargeting sync scripts to a different repository" section to `README.md`, created `README-retarget-sync-scripts.md` with full documentation and examples, added entry to `QUICKSTART.md` script reference table.
 
+### 1.16 Skip stats/properties collection during compare
+
+- [x] **T23** Add `--skip-collect-stats-properties` flag to `sync-target-from-source.sh` to skip the expensive `jf compare list --collect-stats --collect-properties` crawl in Step 2 and Step 4.
+
+  **Use case:** When using `--generate-only` the user primarily needs scripts 03 (`to_sync`) and 04 (`to_sync_delayed`) to identify and transfer missing artifacts. The stats/properties collection step (`--collect-stats-properties` passed to `compare-and-reconcile.sh`) triggers additional AQL folder crawls to populate download stats and properties in `comparison.db`, which can be very slow for large repos. Skipping it avoids generating scripts 05 (`to_sync_stats`) and 06 (`to_sync_folder_props`) during `--generate-only`, significantly reducing runtime.
+
+  **What the flag does:**
+  - When `--skip-collect-stats-properties` is passed, `sync-target-from-source.sh` omits `--collect-stats-properties` from the `compare-and-reconcile.sh` invocation in both Step 2 (before-upload) and Step 4 (after-upload).
+  - Scripts 03/04 are still generated normally (they depend on the artifact list, not stats/properties).
+  - Scripts 05/06 will not be generated (no stats/property data in `comparison.db`).
+  - In the after-upload phase (Step 4), scripts 07/08/09 may also be empty or not generated since they depend on stats/property differences.
+  - The flag is compatible with `--generate-only`, `--run-only`, and all other flags.
+
+  **Implementation:**
+  - Add `SKIP_COLLECT_STATS_PROPERTIES=0` variable.
+  - Add `--skip-collect-stats-properties` option parsing.
+  - In Step 2 and Step 4, conditionally include `--collect-stats-properties` based on the flag.
+  - Update `show_help`, `README.md` options table, and `QUICKSTART.md`.
+
+  **Implemented:** Added `SKIP_COLLECT_STATS_PROPERTIES` variable and `--skip-collect-stats-properties` option parsing. Steps 2 and 4 now build a `STEP2_ARGS`/`STEP4_ARGS` array and conditionally include `--collect-stats-properties` only when the flag is not set. Updated `show_help` with the new option. Added the option to `README.md` options table and `QUICKSTART.md` (options list and two-pass workflow note).
+
+### 1.17 Basic artifact crawl when stats/properties collection is skipped
+
+- [x] **T24** In `compare-and-reconcile.sh`, ensure `jf compare list` (basic artifact crawl) runs for source and target when `COLLECT_STATS_PROPERTIES=0`, so that `comparison.db` is populated and scripts 03/04 can be generated.
+
+  **Problem:** The `jf compare list` calls for Artifactory SH and Cloud were commented out. The only actual crawl happened inside the `COLLECT_STATS_PROPERTIES=1` block (which adds `--collect-stats --collect-properties`). When `--skip-collect-stats-properties` is used, no crawl happens at all, leaving `comparison.db` empty and generating empty scripts.
+
+  **Fix:** Uncomment the `jf compare list` blocks for SH (lines 343–355) and Cloud (lines 364–376) in `compare-and-reconcile.sh`, but only run them when `COLLECT_STATS_PROPERTIES != 1` (i.e., when the full crawl with stats/properties won't happen). When `COLLECT_STATS_PROPERTIES=1` (the default), the existing full crawl with `--collect-stats --collect-properties` runs instead — it also does the basic artifact discovery, so no duplication occurs. Update the uncommented code to use the current AQL flag variables (`$AQL_STYLE_FLAG`, `$AQL_PAGE_SIZE_FLAG`, `$FOLDER_PARALLEL_FLAG`, `$INCLUDE_REMOTE_CACHE_FLAG`).
+
+  **Implemented:** Replaced the commented-out `jf compare list` blocks in both the SH and Cloud sections with active code guarded by `if [ "$COLLECT_STATS_PROPERTIES" != "1" ]`. When stats/properties collection is skipped, the basic artifact crawl runs using the current AQL flag variables. When `COLLECT_STATS_PROPERTIES=1` (default), these blocks are skipped and the full crawl with `--collect-stats --collect-properties` runs as before.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

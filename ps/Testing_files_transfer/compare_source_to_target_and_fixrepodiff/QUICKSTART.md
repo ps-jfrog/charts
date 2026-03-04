@@ -590,7 +590,7 @@ To run the full sync without executing each step manually, set the required envi
 ./sync-target-from-source.sh
 ```
 
-Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README.md](README.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--aql-page-size`, `--folder-parallel`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`) and output directories.
+Or with a config file: `./sync-target-from-source.sh --config env.sh`. See [README.md](README.md) for options (`--skip-consolidation`, `--run-delayed`, `--max-parallel`, `--aql-style`, `--aql-page-size`, `--folder-parallel`, `--include-remote-cache`, `--generate-only`, `--run-only`, `--run-folder-stats`, `--skip-collect-stats-properties`) and output directories.
 
 > **Tip:** Use `--aql-page-size 5000` for large repos to reduce the number of AQL round trips (default is 500). If Artifactory's payload limit truncates a page, the plugin handles it correctly — it processes whatever is returned, advances the offset, and fetches the next page.
 
@@ -621,7 +621,7 @@ Combine with other flags as needed:
 bash sync-target-from-source.sh --config env.sh --run-only --run-delayed --run-folder-stats
 ```
 
-> **Note:** `--generate-only` and `--run-only` are mutually exclusive. `09_to_sync_folder_stats_as_properties.sh` is skipped by default in the after-upload phase; use `--run-folder-stats` to include it.
+> **Note:** `--generate-only` and `--run-only` are mutually exclusive. `09_to_sync_folder_stats_as_properties.sh` is skipped by default in the after-upload phase; use `--run-folder-stats` to include it. To skip the expensive stats/properties crawl entirely (only generating scripts 03/04), add `--skip-collect-stats-properties`.
 
 ### Example one-shot runs with config files
 
