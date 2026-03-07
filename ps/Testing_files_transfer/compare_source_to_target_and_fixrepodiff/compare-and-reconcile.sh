@@ -309,6 +309,15 @@ _audit_run() {
   eval "$_c"
 }
 
+_show_crawl_audit_log() {
+  local _authority="$1"
+  local _latest
+  _latest=$(ls -t crawl-audit-"${_authority}"-*.log 2>/dev/null | head -1)
+  if [ -n "$_latest" ]; then
+    echo "  Crawl audit log: $_latest"
+  fi
+}
+
 _audit_run $COMMAND_NAME init --clean
 
 # Nexus source
@@ -347,6 +356,7 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_SH" == "1" ]; then
         else
             _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         fi
+        _show_crawl_audit_log "$SH_ARTIFACTORY_AUTHORITY"
     fi
     echo ""
 fi
@@ -363,6 +373,7 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_CLOUD" == "1" ]; then
         else
             _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         fi
+        _show_crawl_audit_log "$CLOUD_ARTIFACTORY_AUTHORITY"
     fi
     echo ""
 fi
@@ -384,6 +395,7 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
             else
                 _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
             fi
+            _show_crawl_audit_log "$SOURCE_AUTHORITY"
             echo ""
         fi
         echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
@@ -392,6 +404,7 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         else
             _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
         fi
+        _show_crawl_audit_log "$TARGET_AUTHORITY"
         echo ""
     fi
 fi

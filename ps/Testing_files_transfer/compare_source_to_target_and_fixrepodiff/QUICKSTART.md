@@ -199,6 +199,8 @@ If sync completed successfully, pulls from the target should match what you had 
 
 **compare-and-reconcile.sh** writes a **command-audit log** (e.g. `compare-and-reconcile-command-audit-YYYYMMDD-HHMMSS.log`) for each run, listing every `jf compare` command it executes: init, authority-add, credentials-add, list (per side), optional sync-add (when source and target repo names differ), and report. Use these logs to verify the sequence or to debug.
 
+In addition, each `jf compare list` invocation produces a **crawl audit log** (e.g. `crawl-audit-<authority>-<timestamp>.log`) alongside `comparison.db`. This log records per-prefix item counts, per-repo folder summaries, and any AQL errors encountered during the crawl. If the verification report shows an unexpected artifact count discrepancy, check these logs first — `grep ERROR crawl-audit-*.log` will reveal any transient AQL failures that caused entire SHA1 prefix buckets to be skipped. See the "Diagnosing artifact count discrepancies with the crawl audit log" section in [README.md](README.md) for details.
+
 **Example audit log directories** in this repo (reference only):
 
 | Directory | Scenario | What the audit shows |
@@ -382,7 +384,9 @@ ORDER BY repository_name, source, reason;
 # Or: jf compare query "SELECT repository_name, source, reason, total FROM exclusion_summary ORDER BY repository_name, source, reason"
 ```
 
-Example output:
+**How to read the output:** The `exclusion_summary` view groups **every artifact in the `artifacts` table** by repository, source authority, and its first exclusion/delay reason (from `comparison_reasons`). Rows with an **empty `reason`** are artifacts that passed all exclusion rules — they are **eligible for sync**. Rows with a named reason (e.g. `delay: docker`, `managed by artifactory`) show artifacts that were excluded or delayed, and why.
+
+**Example 1 — small repos (source `app2`, target `app3`):**
 
 ```
 repository_name       source  reason                  total
@@ -393,10 +397,39 @@ __infra_local_docker  app2    managed by artifactory  1
 sv-docker-local-copy  app3                            2
 sv-docker-local-copy  app3    managed by artifactory  1
 ```
-**Note:** 167 items  ( includes the "/" folder) + 24 ( delay files) + 1  ( i.e `/.jfrog/repository.catalog` managed by artifactory) - 1 (i.e "/" folder) = 191 items that are in 
-source repository bit missing in target repository.
 
-Rows with an empty `reason` are artifacts that passed exclusion rules (eligible for sync). Rows with a reason like `delay: docker` or `managed by artifactory` show why those artifacts were excluded or delayed.
+Here `app2` is the **source** authority and `app3` is the **target** authority. Reading the source repo (`__infra_local_docker` on `app2`):
+
+- **167** artifacts passed exclusion rules (eligible for sync, includes the root `/` folder)
+- **24** artifacts were deferred (`delay: docker` — e.g. Docker manifests synced after layers)
+- **1** artifact was excluded (`managed by artifactory` — e.g. `/.jfrog/repository.catalog`)
+- **Total crawled from source:** 167 + 24 + 1 = **192** items
+
+The target repo (`sv-docker-local-copy` on `app3`) shows only 3 items (2 eligible + 1 managed by artifactory), confirming most source artifacts are missing from the target.
+
+**Example 2 — large repos with similar sizes:**
+
+```
+repository_name        source   reason                  total
+---------------------  -------  ----------------------  ---------
+__infra_local_docker   onprem                           7639162
+__infra_local_docker   onprem   delay: docker           482981
+__infra_local_docker   onprem   docker temporary files  2585
+__infra_local_docker   onprem   managed by artifactory  137
+infra-local-docker     onprem2                          5914074
+infra-local-docker     onprem2  delay: docker           363114
+infra-local-docker     onprem2  docker temporary files  210
+infra-local-docker     onprem2  managed by artifactory  20865
+```
+
+Here `onprem` is the **source** and `onprem2` is the **target**:
+
+- **Source** total crawled: 7,639,162 + 482,981 + 2,585 + 137 = **8,124,865** items
+- **Target** total crawled: 5,914,074 + 363,114 + 210 + 20,865 = **6,298,263** items
+
+If the Artifactory UI shows both repos have ~7.6M files (~8.1M items), the target crawl appears **incomplete** — likely due to transient AQL errors during the crawl that caused some SHA1 prefix buckets to be skipped. Check the [crawl audit logs](#command-audit-logs) (`grep ERROR crawl-audit-onprem2-*.log`) to identify which prefixes failed. Re-running the crawl typically resolves the discrepancy.
+
+> **Important:** The blank-reason total is **not** the number of missing files — it is the count of artifacts that **passed exclusion rules** on that side. To see the actual missing files (in source but not in target), use the `missing` view or the per-repo verification report (`verify-comparison-db.sh`) as mentioned in [README-verify-comparison-db.md](README-verify-comparison-db.md).
 
 ### f) Mismatch (sample)
 

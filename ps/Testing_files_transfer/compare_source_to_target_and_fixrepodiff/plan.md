@@ -419,6 +419,51 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Implemented:** Added "e) Exclusion summary" section to `verify-comparison-db.sh` after the cross-instance mapping block. Always displayed (not gated by `--repos`). Queries `exclusion_summary` view and exports `exclusion_summary.csv` when `--csv` is used. Updated `README-verify-comparison-db.md` "What it displays" table and CSV directory listing.
 
+### 1.19 Surface crawl audit log in scripts and documentation
+
+- [x] **T26** After the plugin produces a per-prefix crawl audit log (see Task 31 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md`), surface it in the scripts and documentation.
+
+  **Motivation:** A customer reported a ~1.6M artifact discrepancy between source and target in the `exclusion_summary` after running with `--skip-collect-stats-properties`. Analysis of the plugin source (`aql.go`) confirms that both code paths (with and without `--collect-stats --collect-properties`) use identical `.find()` clauses and should discover the same artifacts. The discrepancy is most likely caused by transient AQL errors during crawl (rate limiting, timeouts, load) that silently `break` out of the per-prefix pagination loop. Currently these are logged at WARN level to stderr and easily lost in terminal output. The plugin-side change (Task 31) writes the structured crawl audit log; this task surfaces it for users.
+
+  **Depends on:** Task 31 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md` (plugin produces `crawl-audit-<authority>-<timestamp>.log`).
+
+  **Script-side changes:**
+  - In `compare-and-reconcile.sh`, after each `jf compare list` call, echo the crawl audit log file path so the user knows where to find it.
+  - Optionally list crawl audit logs in the `--generate-only` summary output.
+  - In the final output in console mention where to find the crawl-audit-*.log file
+
+  **Documentation:**
+  - Update `README.md` troubleshooting section to mention the crawl audit log as the first step for diagnosing artifact count discrepancies.
+  - Update `QUICKSTART.md` with a note about the log file.
+  - Document how to compare crawl logs from runs with and without `--collect-stats --collect-properties` to verify that the same prefixes return the same item counts — confirming the discrepancy is due to transient errors, not the flag itself.
+  - Document the Example output file format (crawl-audit-app3-20260225-143012.log) and where to find it :
+
+```
+=== Crawl Audit Log ===
+authority:        app3
+style:            sha1-prefix
+repos:            [sv-docker-local]
+page_size:        500
+collect_stats:    true
+collect_props:    true
+sha1_prefix_len:  2
+sha1_parallel:    16
+folder_parallel:  4
+started_at:       2026-02-25T14:30:12-05:00
+[sha1-prefix files]  prefix=00  items=12  pages=1  final_offset=12
+[sha1-prefix files]  prefix=01  items=0  pages=0  final_offset=0
+...
+[sha1-prefix files]  SUMMARY  items=4500  pages=45  final_offset=18000  prefix_range=00..ff
+[sha1-prefix folders]  repo=sv-docker-local prefix=sha256:0  items=325  pages=3  final_offset=1300
+...
+[sha1-prefix folders]  SUMMARY  items=5200  pages=52  final_offset=20800  repos=1  workers=4
+=== Crawl Complete ===
+elapsed:  3m 42.15s
+errors:   0
+```
+
+  **Implemented:** Added `_show_crawl_audit_log` helper in `compare-and-reconcile.sh` that echoes the latest crawl audit log path after each `jf compare list` call. Added crawl audit log listing in the `--generate-only` summary in `sync-target-from-source.sh`. Added "Diagnosing artifact count discrepancies with the crawl audit log" section to `README.md`. Added crawl audit log note to "Command audit logs" section in `QUICKSTART.md`.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

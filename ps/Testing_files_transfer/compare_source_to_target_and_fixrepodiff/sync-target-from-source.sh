@@ -362,7 +362,14 @@ if [[ "$GENERATE_ONLY" -eq 1 ]]; then
     lines=$(wc -l < "$f" | tr -d ' ')
     echo "  $local_name  ($lines lines)"
   done
-  echo ""
+  crawl_logs=("$RECONCILE_BASE_DIR"/crawl-audit-*.log)
+  if [[ -e "${crawl_logs[0]}" ]]; then
+    echo "Crawl audit logs:"
+    for cl in "${crawl_logs[@]}"; do
+      echo "  $(basename "$cl")"
+    done
+    echo ""
+  fi
   echo "Review these scripts, then run with --run-only to execute Steps 3–5."
   run_verification
   echo ""
