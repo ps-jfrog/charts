@@ -419,6 +419,9 @@ folder_parallel:  4
 started_at:       2026-02-25T14:30:12-05:00
 [sha1-prefix files]  prefix=00  items=12  pages=1  final_offset=12
 [sha1-prefix files]  prefix=01  items=0  pages=0  final_offset=0
+..
+[sha1-prefix files]  ERROR  prefix=a8 offset=1500: HTTP 500: AQL query execution timeout
+[sha1-prefix files]  ERROR  prefix=a8 offset=1500 read: connection reset by peer
 ...
 [sha1-prefix files]  SUMMARY  items=4500  pages=45  final_offset=18000  prefix_range=00..ff
 [sha1-prefix folders]  repo=sv-docker-local prefix=sha256:0  items=325  pages=3  final_offset=1300
@@ -426,8 +429,42 @@ started_at:       2026-02-25T14:30:12-05:00
 [sha1-prefix folders]  SUMMARY  items=5200  pages=52  final_offset=20800  repos=1  workers=4
 === Crawl Complete ===
 elapsed:  3m 42.15s
+errors:   2
+```
+
+With two repos (e.g. sv-docker-local and infra-docker-local), sha1-prefix-len=2, folder-parallel=4, and no errors:
+
+```
+=== Crawl Audit Log ===
+authority:        app3
+style:            sha1-prefix
+repos:            [sv-docker-local infra-docker-local]
+page_size:        500
+collect_stats:    true
+collect_props:    true
+sha1_prefix_len:  2
+sha1_parallel:    16
+folder_parallel:  4
+started_at:       2026-02-25T14:30:12-05:00
+[sha1-prefix files]  prefix=00  items=34  pages=1  final_offset=34
+[sha1-prefix files]  prefix=01  items=41  pages=1  final_offset=41
+..
+[sha1-prefix files]  SUMMARY  items=9250  pages=620  final_offset=28400  (inflated by properties)  prefix_range=00..ff
+[sha1-prefix folders]  repo=infra-docker-local prefix=non-sha256  items=120  pages=1  final_offset=120
+[sha1-prefix folders]  repo=infra-docker-local prefix=sha256:0  items=310  pages=3  final_offset=1240  (inflated by properties)
+[sha1-prefix folders]  repo=infra-docker-local prefix=sha256:1  items=298  pages=3  final_offset=1192  (inflated by properties)
+...
+[sha1-prefix folders]  SUMMARY  items=7960  pages=72  final_offset=31840  (inflated by properties)  repos=2  workers=4
+=== Crawl Complete ===
+elapsed:  6m 45.12s
 errors:   0
 ```
+
+**Key observations for multi-repo crawls:**
+
+- **sha1-prefix files** — entries are per-prefix, not per-repo. The AQL query scans all repos at once, so each prefix (e.g. `prefix=00`) shows the combined item count across both repos. You will see 256 entries (one per prefix `00`–`ff`), not 512.
+- **sha1-prefix folders** — entries are per-repo per-prefix. With 2 repos and 17 prefix buckets (16 `sha256:` hex prefixes + 1 `non-sha256`), you get 34 entries. They are sorted alphabetically by repo, then by prefix within each repo.
+- **Diffing two runs** — the sorted order is deterministic regardless of worker parallelism. A simple `diff crawl-audit-app3-run1.log crawl-audit-app3-run2.log` will show only timestamp, elapsed time, and any item count differences.
 
 ---
 
