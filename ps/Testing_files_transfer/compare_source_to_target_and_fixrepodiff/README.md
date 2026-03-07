@@ -404,7 +404,7 @@ diff <(grep '^\[sha1-prefix' crawl-audit-myauth-run1.log | sort) \
 ```
 
 **Example crawl audit log** (`crawl-audit-app3-20260225-143012.log`):
-
+The sv-docker-local repo contains 4,500 files and 5,199 folders. The crawl audit log shows 5,200 folders because it includes the root folder (/) in the count.
 ```
 === Crawl Audit Log ===
 authority:        app3
