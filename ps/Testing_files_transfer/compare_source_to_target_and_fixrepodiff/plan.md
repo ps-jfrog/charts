@@ -464,6 +464,14 @@ errors:   0
 
   **Implemented:** Added `_show_crawl_audit_log` helper in `compare-and-reconcile.sh` that echoes the latest crawl audit log path after each `jf compare list` call. Added crawl audit log listing in the `--generate-only` summary in `sync-target-from-source.sh`. Added "Diagnosing artifact count discrepancies with the crawl audit log" section to `README.md`. Added crawl audit log note to "Command audit logs" section in `QUICKSTART.md`.
 
+### 1.20 Document per-prefix mismatch investigation queries
+
+- [x] **T27** Create `identify_source_target_mismatch.md` with `jf compare query` and AQL examples for drilling into per-prefix artifact count differences between source and target crawls.
+
+  **What it covers:** Queries against `comparison.db` to count artifacts per side per SHA1 prefix, find artifacts unique to source or target, produce a source-only/target-only/both breakdown, and verify counts directly via Artifactory AQL.
+
+  **See:** [identify_source_target_mismatch.md](identify_source_target_mismatch.md)
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos
