@@ -134,7 +134,12 @@ START
  │               useInstanceCredentials: true
  │               testConnection: true
  │
- ├── ⑥a Configure ALB via Ingress in values.yaml 
+ ├── ⑥a Configure ALB + DNS via Ingress in values.yaml
+ │       - ALB annotations (load-balancer-name, certificate-arn)
+ │       - ExternalDNS annotation:
+ │           external-dns.alpha.kubernetes.io/hostname: artifactory.customer-domain.com
+ │       - global.jfrogUrlUI: "https://artifactory.customer-domain.com"
+ │         (tells Artifactory its public URL for UI links, emails, webhooks)
  │
  ├── ⑦ Create IAM + IRSA for AWS Load Balancer Controller
  │       curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.2/docs/install/iam_policy.json
@@ -158,6 +163,23 @@ START
  │         --set region=<REGION> \
  │         --set vpcId=<VPC_ID>
  │
+ ├── ⑧a Deploy ExternalDNS (for automated Route53 DNS)
+ │       # See: https://github.com/kubernetes-sigs/external-dns/tree/master
+ │       # ExternalDNS needs IAM permissions for Route53:
+ │       #   route53:ChangeResourceRecordSets
+ │       #   route53:ListHostedZones
+ │       #   route53:ListResourceRecordSets
+ │       helm repo add external-dns https://kubernetes-sigs.github.io/external-dns
+ │       helm upgrade --install external-dns external-dns/external-dns \
+ │         -n kube-system \
+ │         --set provider=aws \
+ │         --set domainFilters[0]=customer-domain.com \
+ │         --set policy=sync \
+ │         --set txtOwnerId=<CLUSTER_NAME>
+ │
+ │       # Alternative: skip this step and create Route53 records
+ │       # manually in step ⑫
+ │
  ├── ⑨ Add JFrog Helm repo
  │       helm repo add jfrog https://charts.jfrog.io
  │       helm repo update
@@ -174,9 +196,16 @@ START
  │       kubectl get pods -n ps-jfrog-platform
  │       kubectl get ingress -n ps-jfrog-platform
  │
- ├── ⑫ Route 53 DNS → ALB DNS
- │       - Copy ALB address from Ingress
- │       - Create CNAME record pointing your domain to it
+ ├── ⑫ DNS: Route53 → ALB
+ │       If ExternalDNS is deployed (step ⑧a):
+ │         - ExternalDNS auto-creates a Route53 A record (Alias)
+ │           pointing artifactory.customer-domain.com to the ALB
+ │         - Verify: dig +short artifactory.customer-domain.com
+ │
+ │       If ExternalDNS is NOT deployed:
+ │         - Copy ALB address from: kubectl get ingress -n ps-jfrog-platform
+ │         - Manually create a Route53 A record (Alias) pointing
+ │           your domain to the ALB DNS name
  │
  └── DONE ✅
 ```
@@ -322,6 +351,7 @@ artifactory:
     annotations:
       alb.ingress.kubernetes.io/load-balancer-name: artifactory-alb
       alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:region:account:certificate/xxxxx
+      external-dns.alpha.kubernetes.io/hostname: artifactory.customer-domain.com
 
 global:
   jfrogUrlUI: "https://artifactory.customer-domain.com"
@@ -333,7 +363,8 @@ global:
 | ---------------------------------------------- | ---------------------------- |
 | `alb.ingress.kubernetes.io/load-balancer-name` | Name of the AWS ALB resource |
 | `certificate-arn`                              | TLS certificate used by ALB  |
-| `global.jfrogUrlUI`                            | Public URL users access      |
+| `external-dns.alpha.kubernetes.io/hostname`    | Tells [ExternalDNS](https://github.com/kubernetes-sigs/external-dns/tree/master) to auto-create a Route53 record pointing to the ALB |
+| `global.jfrogUrlUI`                            | Public URL users access (see [why this is needed](#why-is-globaljfroglui-needed)) |
 
 ---
 
@@ -349,49 +380,57 @@ It **does not configure DNS or CNAME records**.
 
 ### How should DNS be configured if the customer already has a Route53 DNS name?
 
+#### Recommended: Automated DNS with ExternalDNS (standard practice)
+
+The [ExternalDNS](https://github.com/kubernetes-sigs/external-dns/tree/master) controller watches Kubernetes Ingress resources and automatically creates/updates Route53 records. This eliminates manual DNS configuration.
+
+**Prerequisites:**
+- [ExternalDNS](https://github.com/kubernetes-sigs/external-dns/tree/master) deployed in the cluster (e.g. via its [Helm chart](https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns))
+- IAM permissions for ExternalDNS to manage Route53 (`route53:ChangeResourceRecordSets`, `route53:ListHostedZones`, `route53:ListResourceRecordSets`)
+- A Route53 hosted zone for your domain (e.g. `customer-domain.com`)
+
+**How it works:**
+
+1. Add the `external-dns.alpha.kubernetes.io/hostname` annotation to the Ingress (already shown in the values.yaml above).
+2. Deploy Artifactory — the AWS Load Balancer Controller creates the ALB.
+3. ExternalDNS detects the annotation on the Ingress and automatically creates a Route53 A record (Alias) pointing `artifactory.customer-domain.com` to the ALB.
+
+No manual Route53 configuration is needed.
+
+#### Alternative: Manual DNS configuration
+
+If ExternalDNS is not available in your cluster, create the Route53 record manually:
+
 1. Deploy Artifactory with ALB ingress.
 2. The AWS Load Balancer Controller creates the ALB.
-3. Create a **Route53 record** pointing the customer DNS name to the ALB.
-
-Recommended configuration:
-
-```
-
-artifactory.customer-domain.com
-↓
-Alias → ALB DNS name
-
-```
+3. In the Route53 console, create an **A record (Alias)** pointing the customer DNS name to the ALB.
 
 Example ALB DNS name:
 
 ```
-
 k8s-artifactory-123456789.us-east-1.elb.amazonaws.com
+```
 
-````
+Best practice: **Use a Route53 Alias record** (not a CNAME) pointing to the ALB.
+
+Benefits of Alias over CNAME:
+
+* Works with root/apex domains (e.g. `customer-domain.com`)
+* No additional DNS lookup overhead
+* Free of charge (AWS does not charge for Alias queries to ALB)
 
 ---
 
+### Why is `global.jfrogUrlUI` needed?
 
+`global.jfrogUrlUI` is **not** a DNS setting — it tells Artifactory what external URL users will use to access it. Artifactory uses this value to generate correct URLs in:
 
-### Should we use CNAME or Alias in Route53?
+* **"Set Me Up"** dialogs (repository connection instructions shown to developers)
+* **Email notifications** (links back to Artifactory)
+* **Webhook callbacks** and integration URLs
+* **Redirect URLs** after login
 
-Best practice: **Use a Route53 Alias record** pointing to the ALB.
-
-Benefits:
-
-* Works with root domains
-* No additional DNS lookup
-* Fully managed by AWS
-
-Example:
-
-```
-Record type: A
-Alias: Yes
-Alias target: ALB
-```
+Without it, Artifactory would use its internal Kubernetes service URL (e.g. `http://artifactory:8082`), which is not reachable from outside the cluster. This is why the URL must be explicitly configured even when DNS is managed automatically by ExternalDNS.
 
 ---
 
@@ -400,8 +439,8 @@ Alias target: ALB
 | Component                                      | Responsibility                        |
 | ---------------------------------------------- | ------------------------------------- |
 | `alb.ingress.kubernetes.io/load-balancer-name` | Names the ALB resource                |
-| Route53 record                                 | Maps the customer DNS name to the ALB |
-| `global.jfrogUrlUI`                            | Defines the Artifactory public URL    |
+| `external-dns.alpha.kubernetes.io/hostname`    | Auto-creates Route53 record via [ExternalDNS](https://github.com/kubernetes-sigs/external-dns/tree/master) |
+| `global.jfrogUrlUI`                            | Tells Artifactory its public URL (for UI links, emails, webhooks) |
 
 ---
 
@@ -411,12 +450,14 @@ Alias target: ALB
 User
   ↓
 artifactory.customer-domain.com
-  ↓ (Route53 Alias)
-AWS ALB
+  ↓ (Route53 A Alias — auto-managed by ExternalDNS)
+AWS ALB (auto-provisioned by AWS Load Balancer Controller)
   ↓
-Kubernetes Ingress
+Kubernetes Ingress (annotated with hostname + ALB config)
   ↓
-JFrog Artifactory
+Kubernetes Service
+  ↓
+JFrog Artifactory Pod(s)
 ```
 
 ---
