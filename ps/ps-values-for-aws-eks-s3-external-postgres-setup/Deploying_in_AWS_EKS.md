@@ -308,3 +308,115 @@ artifactory:
 
 ---
 
+
+
+## FAQ: Setting a Custom DNS Name for JFrog Artifactory with AWS ALB (EKS)
+
+### What should be configured in `values.yaml`?
+
+The main sections from the above values.yaml are 
+```yaml
+artifactory:
+  ingress:
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/load-balancer-name: artifactory-alb
+      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:region:account:certificate/xxxxx
+
+global:
+  jfrogUrlUI: "https://artifactory.customer-domain.com"
+````
+
+**Explanation**
+
+| Setting                                        | Purpose                      |
+| ---------------------------------------------- | ---------------------------- |
+| `alb.ingress.kubernetes.io/load-balancer-name` | Name of the AWS ALB resource |
+| `certificate-arn`                              | TLS certificate used by ALB  |
+| `global.jfrogUrlUI`                            | Public URL users access      |
+
+---
+
+### Does `alb.ingress.kubernetes.io/load-balancer-name` set the CNAME for Artifactory?
+
+No.
+
+`alb.ingress.kubernetes.io/load-balancer-name` only sets the **name of the AWS Application Load Balancer resource** created by the AWS Load Balancer Controller.
+
+It **does not configure DNS or CNAME records**.
+
+---
+
+### How should DNS be configured if the customer already has a Route53 DNS name?
+
+1. Deploy Artifactory with ALB ingress.
+2. The AWS Load Balancer Controller creates the ALB.
+3. Create a **Route53 record** pointing the customer DNS name to the ALB.
+
+Recommended configuration:
+
+```
+
+artifactory.customer-domain.com
+↓
+Alias → ALB DNS name
+
+```
+
+Example ALB DNS name:
+
+```
+
+k8s-artifactory-123456789.us-east-1.elb.amazonaws.com
+
+````
+
+---
+
+
+
+### Should we use CNAME or Alias in Route53?
+
+Best practice: **Use a Route53 Alias record** pointing to the ALB.
+
+Benefits:
+
+* Works with root domains
+* No additional DNS lookup
+* Fully managed by AWS
+
+Example:
+
+```
+Record type: A
+Alias: Yes
+Alias target: ALB
+```
+
+---
+
+### Summary
+
+| Component                                      | Responsibility                        |
+| ---------------------------------------------- | ------------------------------------- |
+| `alb.ingress.kubernetes.io/load-balancer-name` | Names the ALB resource                |
+| Route53 record                                 | Maps the customer DNS name to the ALB |
+| `global.jfrogUrlUI`                            | Defines the Artifactory public URL    |
+
+---
+
+### Architecture Flow
+
+```
+User
+  ↓
+artifactory.customer-domain.com
+  ↓ (Route53 Alias)
+AWS ALB
+  ↓
+Kubernetes Ingress
+  ↓
+JFrog Artifactory
+```
+
+---
