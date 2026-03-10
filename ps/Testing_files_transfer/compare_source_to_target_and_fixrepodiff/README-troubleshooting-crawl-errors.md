@@ -134,29 +134,58 @@ This leads to:
 
 > **Note:** With `--aql-style sha1-prefix`, the file crawl queries **all repos at once** per prefix. The error `prefix=f2 offset=40000` means the combined result across all repos for that authority failed at that offset — it is not specific to a single repo. To identify which repo contributes the most items to a prefix, query each repo individually.
 
+AQL does not have a built-in count function, and without an explicit `.limit()` the server applies a default maximum (often 1,000 or 10,000). For repos with potentially millions of items per prefix, the [`count-artifacts-by-prefix.sh`](count-artifacts-by-prefix.sh) helper script uses paginated AQL queries to produce an accurate total.
+
+**Usage:**
+
+```bash
+bash count-artifacts-by-prefix.sh \
+  --prefix <sha1-prefix> --server-id <server-id> \
+  [--repo <repo-name>[,<repo-name>...]] [--page-size <n>]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--prefix` | SHA1 prefix to match (e.g. `f2`, `00`, `ab`) | (required) |
+| `--server-id` | JFrog CLI server ID | (required) |
+| `--repo` | Repository name(s), comma-separated (omit for all repos) | all repos |
+| `--page-size` | AQL pagination size | `10000` |
+
 **Count for a specific repo and prefix:**
 
 ```bash
-tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
-items.find({"type": "file", "actual_sha1": {"$match": "f2*"}, "repo": "<repo-name>"}).include("name").offset(0).limit(1)
-EOF
-jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
-  -d @"$tmp" --server-id=<server-id> | jq '.range.total'
-rm -f "$tmp"
+bash count-artifacts-by-prefix.sh \
+  --prefix f2 --server-id psazuse --repo npmjs-remote-cache
 ```
 
-**Count across all repos for a prefix (matches the crawl audit log entry):**
+**Count for multiple repos and prefix:**
 
 ```bash
-tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
-items.find({"type": "file", "actual_sha1": {"$match": "f2*"}}).include("name").offset(0).limit(1)
-EOF
-jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
-  -d @"$tmp" --server-id=<server-id> | jq '.range.total'
-rm -f "$tmp"
+bash count-artifacts-by-prefix.sh \
+  --prefix f2 --server-id psazuse --repo repo-a,repo-b,repo-c
 ```
 
-Compare these totals with the `items=` value in the crawl audit log for that prefix. If they differ, the crawl was incomplete. The per-repo query helps identify which repo has the largest contribution to the prefix and may be causing the timeout.
+**Count across all repos for a prefix** (matches the crawl audit log entry):
+
+```bash
+bash count-artifacts-by-prefix.sh \
+  --prefix f2 --server-id psazuse
+```
+
+**Sample output:**
+
+```
+Counting artifacts for prefix=f2 repo=npmjs-remote-cache (server: psazuse, page size: 10000) ...
+  offset=0  batch=10000  running_total=10000
+  offset=10000  batch=10000  running_total=20000
+  offset=20000  batch=10000  running_total=30000
+  offset=30000  batch=10000  running_total=40000
+  offset=40000  batch=3421  running_total=43421
+
+Total: 43421 items for prefix=f2 repo=npmjs-remote-cache
+```
+
+Compare this total with the `items=` value in the crawl audit log for that prefix. If they differ, the crawl was incomplete. The per-repo query helps identify which repo has the largest contribution to the prefix and may be causing the timeout.
 
 ## How to mitigate
 
