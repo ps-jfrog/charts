@@ -109,7 +109,8 @@ EOF
     offset=$((offset + PAGE_SIZE))
   done
 
-  sort "$tmp_uris" > "$out_file"
+  # -u as a defensive guard against any unexpected AQL pagination duplicates.
+  sort -u "$tmp_uris" > "$out_file"
   rm -f "$tmp_uris"
 
   local total

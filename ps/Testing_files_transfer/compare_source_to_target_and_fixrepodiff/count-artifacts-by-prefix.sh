@@ -5,9 +5,7 @@ set -euo pipefail
 # count-artifacts-by-prefix.sh
 #
 # Count the total number of file artifacts in Artifactory matching a SHA1
-# prefix. Uses a single unbounded AQL query for an exact count; falls back
-# to paginated queries only when results exceed the server's default limit.
-# Optionally filter by repository.
+# prefix, using paginated AQL queries. Optionally filter by repository.
 #
 # Usage:
 #   bash count-artifacts-by-prefix.sh \
@@ -85,37 +83,6 @@ echo "Counting artifacts for prefix=$PREFIX $repo_label (server: $SERVER_ID, pag
 
 tmp_aql="$(mktemp)"
 tmp_raw="$(mktemp)"
-
-# --- Phase 1: single unbounded query (most accurate for < server limit) ---
-cat > "$tmp_aql" <<EOF
-items.find({"type": "file", "actual_sha1": {"\$match": "${PREFIX}*"}${repo_filter}}).include("name").offset(0)
-EOF
-
-jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
-  -d @"$tmp_aql" --server-id="$SERVER_ID" > "$tmp_raw" 2>/dev/null
-
-if ! range_total=$(jq '.range.total' "$tmp_raw" 2>/dev/null); then
-  echo "  ERROR — AQL response is not valid JSON:" >&2
-  head -3 "$tmp_raw" >&2
-  rm -f "$tmp_aql" "$tmp_raw"
-  exit 1
-fi
-
-range_limit=$(jq '.range.limit' "$tmp_raw" 2>/dev/null || echo 0)
-rm -f "$tmp_aql" "$tmp_raw"
-
-if [[ "$range_total" -lt "$range_limit" ]]; then
-  # All results fit in a single response — exact count
-  echo ""
-  echo "Total: $range_total items for prefix=$PREFIX $repo_label  (single query)"
-  exit 0
-fi
-
-# --- Phase 2: result hit the server limit — fall back to paginated counting ---
-echo "  Result count ($range_total) reached server limit ($range_limit) — switching to paginated counting ..."
-echo "  Note: concurrent writes to the repo may cause a slight over/under-count."
-echo ""
-
 offset=0
 total=0
 
@@ -131,7 +98,7 @@ EOF
     echo "  ERROR at offset=$offset — AQL response is not valid JSON:" >&2
     head -3 "$tmp_raw" >&2
     rm -f "$tmp_aql" "$tmp_raw"
-    break
+    exit 1
   fi
 
   total=$((total + batch))
@@ -146,4 +113,4 @@ done
 rm -f "$tmp_aql" "$tmp_raw"
 
 echo ""
-echo "Total: $total items for prefix=$PREFIX $repo_label  (paginated)"
+echo "Total: $total items for prefix=$PREFIX $repo_label"
