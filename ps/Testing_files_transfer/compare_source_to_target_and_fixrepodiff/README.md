@@ -378,33 +378,30 @@ jf rt curl "/api/storage/<repo>/<path-to-file>" --server-id=<source-authority>
 
 ## Diagnosing artifact count discrepancies with the crawl audit log
 
-Each `jf compare list` invocation produces a **crawl audit log** (e.g. `crawl-audit-<authority>-<timestamp>.log`) in the `RECONCILE_BASE_DIR` alongside `comparison.db`. This log captures:
+Each `jf compare list` invocation produces a **crawl audit log** (e.g. `crawl-audit-<authority>-<timestamp>.log`) in the `RECONCILE_BASE_DIR` alongside `comparison.db`. This log captures per-prefix file/folder summaries, AQL errors, and an overall crawl summary.
 
-- **Per-prefix file summaries** (sha1-prefix style): prefix, items discovered, pages fetched, final offset
-- **Per-repo folder summaries**: repo, folders discovered, pages fetched, final offset
-- **AQL errors/warnings**: any transient errors (rate limiting, timeouts, network issues) with full error text
-- **Overall crawl summary**: total items, pages, elapsed time, and which flags were used (`collect_stats`, `collect_props`)
-
-**When to use it:** If the `exclusion_summary` or `missing` view shows a large unexpected discrepancy between source and target artifact counts, check the crawl audit logs for errors. Transient AQL errors cause the crawl to skip remaining items in a SHA1 prefix bucket, which can silently drop thousands of artifacts from the `artifacts` table.
-
-**Comparing runs with and without `--skip-collect-stats-properties`:**
-
-The crawl audit log includes `collect_stats` and `collect_props` flags in the header. By comparing logs from two runs against the same repo — one with `--collect-stats --collect-properties` and one without — you can verify that the same SHA1 prefixes return the same item counts. Any differences are caused by transient AQL errors during the crawl, not by the flags themselves.
+**Quick check for errors:**
 
 ```bash
-# List crawl audit logs in the reconcile directory
-ls -lt "$RECONCILE_BASE_DIR"/crawl-audit-*.log
-
-# Check for errors in a specific crawl log
-grep ERROR "$RECONCILE_BASE_DIR"/crawl-audit-<authority>-<timestamp>.log
-
-# Compare item counts between two runs
-diff <(grep '^\[sha1-prefix' crawl-audit-myauth-run1.log | sort) \
-     <(grep '^\[sha1-prefix' crawl-audit-myauth-run2.log | sort)
+grep ERROR "$RECONCILE_BASE_DIR"/crawl-audit-*.log
 ```
+
+Common errors include `EOF` (connection closed by server), `TLS handshake timeout`, `HTTP 500`, and `connection reset by peer`. These are transient network/server errors that cause the crawl to stop paginating a specific SHA1 prefix, silently dropping artifacts from `comparison.db`.
+
+**Mitigation options:**
+
+1. **Reduce concurrency** — lower `--folder-parallel` (e.g. 16 → 4)
+2. **Reduce page size** — lower `--aql-page-size` (e.g. 5000 → 2000)
+3. **Re-run the crawl** — transient errors often don't recur
+4. **Use folder-based crawl** — omit `--aql-style sha1-prefix` to crawl per-repo per-folder instead of by SHA1 prefix, which produces smaller per-query result sets and is more resilient to timeouts
+
+For detailed error explanations, impact analysis, verification queries, and mitigation examples, see [README-troubleshooting-crawl-errors.md](README-troubleshooting-crawl-errors.md).
+
+**Comparing runs:** see the crawl audit log header (`collect_stats`, `collect_props`) and diff commands in the [troubleshooting guide](README-troubleshooting-crawl-errors.md).
 
 **Example crawl audit log** (`crawl-audit-app3-20260225-143012.log`):
 The sv-docker-local repo contains 4,500 files and 5,199 folders. The crawl audit log shows 5,200 folders because it includes the root folder (/) in the count.
+
 ```
 === Crawl Audit Log ===
 authority:        app3
@@ -432,39 +429,13 @@ elapsed:  3m 42.15s
 errors:   2
 ```
 
-With two repos (e.g. sv-docker-local and infra-docker-local), sha1-prefix-len=2, folder-parallel=4, and no errors:
-
-```
-=== Crawl Audit Log ===
-authority:        app3
-style:            sha1-prefix
-repos:            [sv-docker-local infra-docker-local]
-page_size:        500
-collect_stats:    true
-collect_props:    true
-sha1_prefix_len:  2
-sha1_parallel:    16
-folder_parallel:  4
-started_at:       2026-02-25T14:30:12-05:00
-[sha1-prefix files]  prefix=00  items=34  pages=1  final_offset=34
-[sha1-prefix files]  prefix=01  items=41  pages=1  final_offset=41
-..
-[sha1-prefix files]  SUMMARY  items=9250  pages=620  final_offset=28400  (inflated by properties)  prefix_range=00..ff
-[sha1-prefix folders]  repo=infra-docker-local prefix=non-sha256  items=120  pages=1  final_offset=120
-[sha1-prefix folders]  repo=infra-docker-local prefix=sha256:0  items=310  pages=3  final_offset=1240  (inflated by properties)
-[sha1-prefix folders]  repo=infra-docker-local prefix=sha256:1  items=298  pages=3  final_offset=1192  (inflated by properties)
-...
-[sha1-prefix folders]  SUMMARY  items=7960  pages=72  final_offset=31840  (inflated by properties)  repos=2  workers=4
-=== Crawl Complete ===
-elapsed:  6m 45.12s
-errors:   0
-```
-
 **Key observations for multi-repo crawls:**
 
-- **sha1-prefix files** — entries are per-prefix, not per-repo. The AQL query scans all repos at once, so each prefix (e.g. `prefix=00`) shows the combined item count across both repos. You will see 256 entries (one per prefix `00`–`ff`), not 512.
-- **sha1-prefix folders** — entries are per-repo per-prefix. With 2 repos and 17 prefix buckets (16 `sha256:` hex prefixes + 1 `non-sha256`), you get 34 entries. They are sorted alphabetically by repo, then by prefix within each repo.
-- **Diffing two runs** — the sorted order is deterministic regardless of worker parallelism. A simple `diff crawl-audit-app3-run1.log crawl-audit-app3-run2.log` will show only timestamp, elapsed time, and any item count differences.
+- **sha1-prefix files** — entries are per-prefix, not per-repo. The AQL query scans all repos at once, so each prefix (e.g. `prefix=00`) shows the combined item count across both repos.
+- **sha1-prefix folders** — entries are per-repo per-prefix, sorted alphabetically by repo, then by prefix.
+- **Diffing two runs** — the sorted order is deterministic regardless of worker parallelism.
+
+For a full multi-repo example, see the [troubleshooting guide](README-troubleshooting-crawl-errors.md).
 
 ---
 
