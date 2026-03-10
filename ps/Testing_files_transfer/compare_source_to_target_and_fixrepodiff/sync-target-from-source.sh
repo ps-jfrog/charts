@@ -53,6 +53,7 @@ GENERATE_ONLY=0
 RUN_ONLY=0
 RUN_FOLDER_STATS=0
 SKIP_COLLECT_STATS_PROPERTIES=0
+SHA1_RESUME=""
 VERIFICATION_CSV=""
 VERIFICATION_CSV_ENABLED=0
 VERIFICATION_NO_LIMIT=0
@@ -96,6 +97,11 @@ OPTIONS:
   --include-remote-cache  Include remote-cache repos in the crawl. Required when --repos names a
                         remote-cache repo (e.g. npmjs-remote-cache). Passed to compare-and-reconcile.sh.
                         Also settable via env COMPARE_INCLUDE_REMOTE_CACHE=1.
+  --sha1-resume <pairs> Resume a failed sha1-prefix crawl for specific prefixes. <pairs> is a
+                        comma-separated list of prefix:offset (e.g. f2:40000,f3:40000,fa:25000).
+                        Skips 'init --clean' to preserve existing comparison.db. Can be combined
+                        with a smaller --aql-page-size to avoid repeat failures. Repeatable until
+                        all errors are resolved. Also settable via env COMPARE_SHA1_RESUME.
   --verification-csv [dir]  Write CSV report files during Step 6 verification (one file per
                         section per repo). If <dir> is omitted, defaults to RECONCILE_BASE_DIR.
                         Passed to verify-comparison-db.sh --csv.
@@ -161,6 +167,11 @@ while [[ $# -gt 0 ]]; do
     --include-remote-cache)
       INCLUDE_REMOTE_CACHE=1
       shift
+      ;;
+    --sha1-resume)
+      [[ $# -lt 2 ]] && { echo "Error: --sha1-resume requires prefix:offset pairs (e.g. f2:40000,f3:40000)." >&2; exit 1; }
+      SHA1_RESUME="$2"
+      shift 2
       ;;
     --generate-only)
       GENERATE_ONLY=1
@@ -233,6 +244,9 @@ fi
 
 # Include remote-cache: CLI flag overrides env; env from config is also respected
 [[ -n "$INCLUDE_REMOTE_CACHE" ]] && export COMPARE_INCLUDE_REMOTE_CACHE="$INCLUDE_REMOTE_CACHE"
+
+# SHA1 resume: CLI flag overrides env; env from config is also respected
+[[ -n "$SHA1_RESUME" ]] && export COMPARE_SHA1_RESUME="$SHA1_RESUME"
 
 # Output dirs: respect RECONCILE_BASE_DIR from config or environment
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"

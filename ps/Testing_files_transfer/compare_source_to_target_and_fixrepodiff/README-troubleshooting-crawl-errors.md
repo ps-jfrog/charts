@@ -215,12 +215,53 @@ bash sync-target-from-source.sh \
   --verification-csv --verification-no-limit
 ```
 
-### 3. Re-run the crawl
+### 3. Resume only the failed prefixes (`--sha1-resume`)
 
-These errors are transient. A second run may succeed for the previously failed prefixes since `jf compare list` repopulates `comparison.db`:
+Instead of re-running the full crawl (which can take hours), resume only the failed prefixes from where they left off. Extract the prefix:offset pairs from the crawl audit log and pass them via `--sha1-resume`:
 
 ```bash
-# Re-run with the same flags — the crawl will re-crawl all prefixes
+# Extract failed prefix:offset pairs from the audit log
+RESUME=$(grep ERROR crawl-audit-*.log | \
+  sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+  paste -sd, -)
+
+# Resume with a smaller page size to avoid repeat failures
+bash sync-target-from-source.sh \
+  --config <config> \
+  --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 2000 --folder-parallel 16 \
+  --sha1-resume "$RESUME"
+```
+
+`--sha1-resume` skips `init --clean` (preserving the existing `comparison.db`) and tells the plugin to crawl only the specified prefixes from their given offsets. The DB's `ON CONFLICT ... DO UPDATE` upsert handles any overlap at page boundaries.
+
+**Iterate if errors persist.** Check the new resume audit log and repeat with progressively smaller `--aql-page-size` until no errors remain:
+
+```bash
+# Check the latest audit log for remaining errors
+grep ERROR crawl-audit-*.log
+
+# Extract still-failing prefixes and resume again
+RESUME=$(grep ERROR crawl-audit-<latest>.log | \
+  sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+  paste -sd, -)
+
+bash sync-target-from-source.sh \
+  --config <config> \
+  --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 500 --folder-parallel 16 \
+  --sha1-resume "$RESUME"
+```
+
+Each resume run is idempotent: it produces its own timestamped audit log, merges results into the same `comparison.db`, and can be repeated as many times as needed.
+
+### 4. Re-run the full crawl
+
+If `--sha1-resume` is not available or you prefer a clean slate, a full re-run may succeed for the previously failed prefixes since `jf compare list` repopulates `comparison.db`:
+
+```bash
 bash sync-target-from-source.sh \
   --config <config> \
   --generate-only --skip-collect-stats-properties \
@@ -231,7 +272,7 @@ bash sync-target-from-source.sh \
 
 Check the new crawl audit log to confirm the previously errored prefixes now have complete counts.
 
-### 4. Use folder-based crawl instead of sha1-prefix
+### 5. Use folder-based crawl instead of sha1-prefix
 
 If `--aql-style sha1-prefix` consistently fails for certain prefixes due to very large buckets, try running **without** the `--aql-style` flag. This uses the default folder-based crawl, which paginates per-repo per-folder rather than by SHA1 prefix:
 
@@ -251,7 +292,7 @@ bash sync-target-from-source.sh \
 
 **Trade-off:** The folder-based crawl may be slower overall (more queries, each scoped to a single repo) but is more resilient to transient network errors because no single query returns an extremely large result set.
 
-### 5. Check Artifactory server-side logs
+### 6. Check Artifactory server-side logs
 
 On the Artifactory server, check for corresponding errors:
 

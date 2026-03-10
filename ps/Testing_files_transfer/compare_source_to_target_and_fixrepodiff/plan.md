@@ -472,6 +472,95 @@ errors:   0
 
   **See:** [identify_source_target_mismatch.md](identify_source_target_mismatch.md)
 
+### 1.21 Resume failed sha1-prefix crawl via shell wrapper
+
+- [x] **T28** Add `--sha1-resume` support to `sync-target-from-source.sh` and `compare-and-reconcile.sh` so that a partially failed sha1-prefix crawl can be resumed without a full re-crawl.
+
+  **Depends on:** Plugin task 33 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md` (adds `--sha1-resume` flag to `jf compare list`).
+
+  **Implementation:**
+
+  1. Add `--sha1-resume <prefix:offset,...>` flag to `sync-target-from-source.sh` and pass it through to `compare-and-reconcile.sh`.
+  2. When `--sha1-resume` is set, `compare-and-reconcile.sh` passes it to the relevant `jf compare list` call instead of running a full crawl.
+  3. Add a helper command (or document a one-liner) to auto-extract failed prefixes from the crawl audit log:
+     ```bash
+     grep ERROR crawl-audit-*.log | \
+       sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+       paste -sd, -
+     ```
+     Output example: `f2:40000,f3:40000,f8:30000,f9:30000,fa:25000,fc:25000,fe:20000,ff:15000`
+  4. Document usage in `README-troubleshooting-crawl-errors.md` as a mitigation step: instead of re-running the full 5+ hour crawl, resume only the failed prefixes in minutes.
+
+  **Recommended resume workflow:**
+
+  1. Run the full crawl (may take hours for large repos):
+     ```bash
+     bash sync-target-from-source.sh \
+       --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+       --generate-only --skip-collect-stats-properties \
+       --include-remote-cache --aql-style sha1-prefix \
+       --aql-page-size 5000 --folder-parallel 16
+     ```
+  2. Check for errors:
+     ```bash
+     grep ERROR crawl-audit-*.log
+     ```
+  3. Extract failed prefix:offset pairs:
+     ```bash
+     grep ERROR crawl-audit-*.log | \
+       sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+       paste -sd, -
+     ```
+  4. Resume with a **smaller page size** to avoid hitting the same EOF/TLS errors:
+     ```bash
+     bash sync-target-from-source.sh \
+       --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+       --generate-only --skip-collect-stats-properties \
+       --include-remote-cache --aql-style sha1-prefix \
+       --aql-page-size 2000 --folder-parallel 16 \
+       --sha1-resume "f2:40000,f3:40000,f8:30000,f9:30000,fa:25000,fc:25000,fe:20000,ff:15000"
+     ```
+     The smaller `--aql-page-size` (e.g. 2000 instead of 5000) reduces the HTTP response payload
+     per request, making each request less likely to trigger EOF or TLS timeout errors. This is
+     safe because `--aql-page-size` is independent of `--sha1-resume` — the DB's
+     `ON CONFLICT ... DO UPDATE` upsert handles any overlap at page boundaries.
+
+  5. Check the **new** resume audit log for remaining errors:
+     ```bash
+     grep ERROR crawl-audit-*-resume-*.log   # or the latest crawl-audit-*.log
+     ```
+
+  6. **Repeat if errors persist.** The resume is fully idempotent — each run produces its own
+     audit log, merges results into the same `comparison.db`, and can be re-run as many times as
+     needed. On each iteration, extract the still-failing prefixes from the **latest** audit log
+     and reduce `--aql-page-size` further:
+
+     ```bash
+     # Iteration 2: extract from the latest resume audit log
+     RESUME=$(grep ERROR crawl-audit-onprem2-20260309-*.log | \
+       sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+       paste -sd, -)
+
+     bash sync-target-from-source.sh \
+       --config config_env_examples/env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
+       --generate-only --skip-collect-stats-properties \
+       --include-remote-cache --aql-style sha1-prefix \
+       --aql-page-size 500 --folder-parallel 16 \
+       --sha1-resume "$RESUME"
+     ```
+
+     Repeat until `grep ERROR crawl-audit-*.log` on the latest log returns no results.
+
+  **Why iterative resume is safe:**
+  - Each resume run only crawls the specified prefixes from their given offsets — all previously
+    crawled data remains untouched in `comparison.db`.
+  - The DB upsert (`ON CONFLICT ... DO UPDATE`) makes every run idempotent — re-crawling an
+    already-fetched offset range just updates existing rows with identical data.
+  - Each run generates a separate timestamped audit log, so you always know which prefixes
+    succeeded or failed in each iteration.
+  - Progressively reducing `--aql-page-size` (5000 → 2000 → 500) narrows in on the most
+    stubborn prefixes with the smallest possible request payload.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

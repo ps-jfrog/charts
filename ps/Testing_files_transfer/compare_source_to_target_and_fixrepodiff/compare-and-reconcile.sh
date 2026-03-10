@@ -69,6 +69,9 @@ OPTIONS:
   --include-remote-cache       Include remote-cache repos in the crawl. Required when --repos names a
                                remote-cache repo (e.g. npmjs-remote-cache). Also settable via env
                                COMPARE_INCLUDE_REMOTE_CACHE=1.
+  --sha1-resume <pairs>        Resume a failed sha1-prefix crawl. <pairs> is comma-separated
+                               prefix:offset (e.g. f2:40000,f3:40000). Skips 'init --clean' to
+                               preserve existing comparison.db. Also settable via env COMPARE_SHA1_RESUME.
   -h, --help                   Show this help.
 
 ENVIRONMENT (same as compare-artifacts.sh):
@@ -91,6 +94,7 @@ RECONCILIATION:
   COMPARE_AQL_PAGE_SIZE=<N>    Same as --aql-page-size (e.g. 5000). Appended to all 'jf compare list' calls.
   COMPARE_FOLDER_PARALLEL=<N>  Same as --folder-parallel (e.g. 16). Appended to all 'jf compare list' calls.
   COMPARE_INCLUDE_REMOTE_CACHE=1  Same as --include-remote-cache.
+  COMPARE_SHA1_RESUME=<pairs>  Same as --sha1-resume (e.g. f2:40000,f3:40000).
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
@@ -106,6 +110,7 @@ AQL_STYLE="${COMPARE_AQL_STYLE:-}"
 AQL_PAGE_SIZE="${COMPARE_AQL_PAGE_SIZE:-}"
 FOLDER_PARALLEL="${COMPARE_FOLDER_PARALLEL:-}"
 INCLUDE_REMOTE_CACHE="${COMPARE_INCLUDE_REMOTE_CACHE:-0}"
+SHA1_RESUME="${COMPARE_SHA1_RESUME:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --b4upload)
@@ -147,6 +152,11 @@ while [[ $# -gt 0 ]]; do
             INCLUDE_REMOTE_CACHE=1
             shift
             ;;
+        --sha1-resume)
+            [[ $# -lt 2 ]] && { echo "Error: --sha1-resume requires prefix:offset pairs (e.g. f2:40000,f3:40000)." >&2; exit 1; }
+            SHA1_RESUME="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -174,6 +184,10 @@ FOLDER_PARALLEL_FLAG=""
 # Build include-remote-cache flag (empty when not set → only LOCAL/FEDERATED repos)
 INCLUDE_REMOTE_CACHE_FLAG=""
 [[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && INCLUDE_REMOTE_CACHE_FLAG="--include-remote-cache"
+
+# Build sha1-resume flag (empty when not set → full crawl)
+SHA1_RESUME_FLAG=""
+[[ -n "$SHA1_RESUME" ]] && SHA1_RESUME_FLAG="--sha1-resume=$SHA1_RESUME"
 
 # Require mode (--b4upload or --after-upload)
 if [ -z "$RECONCILE_MODE" ]; then
@@ -293,6 +307,7 @@ echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIE
 [ -n "$AQL_PAGE_SIZE" ] && echo "AQL page size: $AQL_PAGE_SIZE"
 [ -n "$FOLDER_PARALLEL" ] && echo "Folder parallel workers: $FOLDER_PARALLEL"
 [[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && echo "Include remote-cache repos: yes"
+[ -n "$SHA1_RESUME" ] && echo "SHA1 resume: $SHA1_RESUME"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -318,7 +333,11 @@ _show_crawl_audit_log() {
   fi
 }
 
-_audit_run $COMMAND_NAME init --clean
+if [[ -n "$SHA1_RESUME" ]]; then
+    echo "=== Resume mode: skipping 'init --clean' to preserve existing comparison.db ==="
+else
+    _audit_run $COMMAND_NAME init --clean
+fi
 
 # Nexus source
 if [ "$COMPARE_SOURCE_NEXUS" == "1" ]; then
@@ -352,9 +371,9 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_SH" == "1" ]; then
     if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
         echo "=== Listing artifacts on SH ($SH_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
         if [ -n "${SH_LIST_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         else
-            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         fi
         _show_crawl_audit_log "$SH_ARTIFACTORY_AUTHORITY"
     fi
@@ -369,9 +388,9 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_CLOUD" == "1" ]; then
     if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
         echo "=== Listing artifacts on Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
         if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         else
-            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         fi
         _show_crawl_audit_log "$CLOUD_ARTIFACTORY_AUTHORITY"
     fi
@@ -391,18 +410,18 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
             echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
             if [ -n "${SH_LIST_REPOS:-}" ]; then
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
             else
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
             fi
             _show_crawl_audit_log "$SOURCE_AUTHORITY"
             echo ""
         fi
         echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
         if [ -n "${TARGET_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         else
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
         fi
         _show_crawl_audit_log "$TARGET_AUTHORITY"
         echo ""
