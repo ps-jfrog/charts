@@ -138,7 +138,7 @@ This leads to:
 
 ```bash
 tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
-items.find({"type": "file", "actual_sha1": {"$match": "f2*"}, "repo": "<repo-name>"}).include("name").limit(1).offset(0)
+items.find({"type": "file", "actual_sha1": {"$match": "f2*"}, "repo": "<repo-name>"}).include("name").offset(0).limit(1)
 EOF
 jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
   -d @"$tmp" --server-id=<server-id> | jq '.range.total'
@@ -149,7 +149,7 @@ rm -f "$tmp"
 
 ```bash
 tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
-items.find({"type": "file", "actual_sha1": {"$match": "f2*"}}).include("name").limit(1).offset(0)
+items.find({"type": "file", "actual_sha1": {"$match": "f2*"}}).include("name").offset(0).limit(1)
 EOF
 jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
   -d @"$tmp" --server-id=<server-id> | jq '.range.total'
