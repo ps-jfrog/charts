@@ -76,7 +76,20 @@ This leads to:
 
 ## Verifying actual counts via AQL
 
-To check the true total for a prefix, query Artifactory directly:
+> **Note:** With `--aql-style sha1-prefix`, the file crawl queries **all repos at once** per prefix. The error `prefix=f2 offset=40000` means the combined result across all repos for that authority failed at that offset — it is not specific to a single repo. To identify which repo contributes the most items to a prefix, query each repo individually.
+
+**Count for a specific repo and prefix:**
+
+```bash
+tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
+items.find({"type": "file", "actual_sha1": {"$match": "f2*"}, "repo": "<repo-name>"}).include("name").limit(1).offset(0)
+EOF
+jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
+  -d @"$tmp" --server-id=<server-id> | jq '.range.total'
+rm -f "$tmp"
+```
+
+**Count across all repos for a prefix (matches the crawl audit log entry):**
 
 ```bash
 tmp="$(mktemp)" && cat > "$tmp" <<'EOF'
@@ -87,7 +100,7 @@ jf rt curl -s -XPOST "/api/search/aql" -H "Content-Type: text/plain" \
 rm -f "$tmp"
 ```
 
-Compare this total with the `items=` value in the crawl audit log for that prefix. If they differ, the crawl was incomplete.
+Compare these totals with the `items=` value in the crawl audit log for that prefix. If they differ, the crawl was incomplete. The per-repo query helps identify which repo has the largest contribution to the prefix and may be causing the timeout.
 
 ## How to mitigate
 
