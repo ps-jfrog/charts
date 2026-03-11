@@ -121,7 +121,7 @@ write_csv() {
 
 if ! jf compare query "SELECT 1" &>/dev/null; then
   echo "jf compare query not available (older plugin version); skipping verification queries."
-  echo "Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'."
+  echo "Use sqlite3 with comparison.db instead. See 01-QUICKSTART.md 'Inspecting comparison.db'."
   exit 0
 fi
 

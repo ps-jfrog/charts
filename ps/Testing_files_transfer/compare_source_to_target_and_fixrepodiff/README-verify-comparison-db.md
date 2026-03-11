@@ -147,15 +147,15 @@ If `jf compare query` is not available (older plugin version without Task 30), t
 
 ```
 jf compare query not available (older plugin version); skipping verification queries.
-Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'.
+Use sqlite3 with comparison.db instead. See 01-QUICKSTART.md 'Inspecting comparison.db'.
 ```
 
-You can use `sqlite3` directly as documented in [QUICKSTART.md](QUICKSTART.md) under "Inspecting comparison.db".
+You can use `sqlite3` directly as documented in [01-QUICKSTART.md](01-QUICKSTART.md) under "Inspecting comparison.db".
 
 ---
 
 ## See also
 
 - [README.md](README.md) — `sync-target-from-source.sh` documentation (Step 6 calls this script).
-- [QUICKSTART.md](QUICKSTART.md) — "Inspecting comparison.db" section for the full set of `sqlite3` / `jf compare query` queries.
+- [01-QUICKSTART.md](01-QUICKSTART.md) — "Inspecting comparison.db" section for the full set of `sqlite3` / `jf compare query` queries.
 - [README-compare-and-reconcile.md](README-compare-and-reconcile.md) — `compare-and-reconcile.sh` documentation.

@@ -31,7 +31,7 @@ Compare artifacts between Nexus / Artifactory SH / Artifactory Cloud, optionally
    export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
    ./compare-and-reconcile.sh --collect-stats-properties --reconcile --target-only
    ```
-3. Run **before-upload** compare, then run scripts 01–06 (see [QUICKSTART.md](QUICKSTART.md) for full steps):
+3. Run **before-upload** compare, then run scripts 01–06 (see [01-QUICKSTART.md](01-QUICKSTART.md) for full steps):
    ```bash
    ./compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only
    # Then run 01–02 if consolidation needed; then 03, 04 (optional), 05, 06
@@ -153,7 +153,7 @@ Run the script with **`--b4upload`** or **`--after-upload`**, plus **collect-sta
 Outputs:
 
 - **Report:** `report-<scenario>-<timestamp>.csv` (mismatches from `comparison.db`).
-- **Scripts** (in current directory or `RECONCILE_OUTPUT_DIR`), numbered in run order. You must use **`--b4upload`** or **`--after-upload`** so the correct set is generated; see [QUICKSTART.md](QUICKSTART.md).
+- **Scripts** (in current directory or `RECONCILE_OUTPUT_DIR`), numbered in run order. You must use **`--b4upload`** or **`--after-upload`** so the correct set is generated; see [01-QUICKSTART.md](01-QUICKSTART.md).
 
   **Before-upload** (`--b4upload`): 01–06  
   - `01_to_consolidate.sh` — Phase 1: consolidate abnormal repos to normalized repos (same instance).  
@@ -168,11 +168,11 @@ Outputs:
   - `08_to_sync_props.sh` — Properties sync to target.  
   - `09_to_sync_folder_stats_as_properties.sh` — Folder stats as sync.* custom properties on folders.
 
-**Flow:** Run compare with `--b4upload` → run 01–06. After uploading, run compare with `--after-upload` → run 07–09. See [QUICKSTART.md](QUICKSTART.md).
+**Flow:** Run compare with `--b4upload` → run 01–06. After uploading, run compare with `--after-upload` → run 07–09. See [01-QUICKSTART.md](01-QUICKSTART.md).
 
 ### Step 5: Run reconciliation in order (before-upload → after-upload)
 
-Execute the generated scripts in numeric order. Use **two compare runs**: first **before-upload** (generates 01–06), then after binaries/stats are on the target, **after-upload** (generates 07–09). See [QUICKSTART.md](QUICKSTART.md) for the full flow.
+Execute the generated scripts in numeric order. Use **two compare runs**: first **before-upload** (generates 01–06), then after binaries/stats are on the target, **after-upload** (generates 07–09). See [01-QUICKSTART.md](01-QUICKSTART.md) for the full flow.
 
 **Before-upload run** — Generate and run 01–06:
 

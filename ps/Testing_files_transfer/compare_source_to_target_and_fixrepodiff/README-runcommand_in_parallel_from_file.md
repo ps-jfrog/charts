@@ -76,4 +76,4 @@ No success logging:
 
 - [README-group_sync_by_sha1.md](README-group_sync_by_sha1.md) — Pre-processor that groups download+upload lines by SHA1 to eliminate duplicate downloads.
 - [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md) — Converter for same-Artifactory server-side copy (`jf rt cp`).
-- [QUICKSTART.md](QUICKSTART.md) — Full workflow guide.
+- [01-QUICKSTART.md](01-QUICKSTART.md) — Full workflow guide.

@@ -343,7 +343,7 @@ run_verification() {
     ( cd "$RECONCILE_BASE_DIR" && bash "$VERIFY_SCRIPT" "${VERIFY_ARGS[@]}" )
   else
     echo "  verify-comparison-db.sh not found; skipping verification queries." >&2
-    echo "  Use sqlite3 with comparison.db instead. See QUICKSTART.md 'Inspecting comparison.db'."
+    echo "  Use sqlite3 with comparison.db instead. See 01-QUICKSTART.md 'Inspecting comparison.db'."
   fi
   echo "[timing] Step 6 (verification queries) completed in $(format_elapsed $_start)"
 }
@@ -484,6 +484,6 @@ echo ""
 echo "=== Sync workflow complete ==="
 echo "  Before-upload output: $B4_DIR"
 echo "  After-upload output:  $AFTER_DIR"
-echo "  Next: Verify from target (e.g. docker pull). See QUICKSTART.md Step 6."
+echo "  Next: Verify from target (e.g. docker pull). See 01-QUICKSTART.md Step 6."
 echo ""
 echo "[timing] Total elapsed: $(format_elapsed $OVERALL_START)"

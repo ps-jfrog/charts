@@ -224,13 +224,32 @@ Instead of re-running the full crawl (which can take hours), resume only the fai
 RESUME=$(grep ERROR crawl-audit-*.log | \
   sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
   paste -sd, -)
+echo "$RESUME"
+```
 
-# Resume with a smaller page size to avoid repeat failures
+Example output:
+
+```
+00:10,01:10
+```
+
+The format is a comma-separated list of `prefix:offset` pairs. Each pair tells the plugin to re-crawl that SHA1 prefix starting from the AQL offset where it failed:
+
+| Part | Meaning |
+|------|---------|
+| `00` | SHA1 prefix that had the error |
+| `10` | AQL pagination offset where the error occurred — crawling resumes from here |
+| `,`  | Separator between pairs — multiple failed prefixes can be resumed in one call |
+
+Pass the extracted pairs to `--sha1-resume`:
+
+```bash
 bash sync-target-from-source.sh \
   --config <config> \
   --generate-only --skip-collect-stats-properties \
   --include-remote-cache --aql-style sha1-prefix \
   --aql-page-size 2000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit \
   --sha1-resume "$RESUME"
 ```
 
@@ -252,6 +271,7 @@ bash sync-target-from-source.sh \
   --generate-only --skip-collect-stats-properties \
   --include-remote-cache --aql-style sha1-prefix \
   --aql-page-size 500 --folder-parallel 16 \
+  --verification-csv --verification-no-limit \
   --sha1-resume "$RESUME"
 ```
 
@@ -302,5 +322,5 @@ On the Artifactory server, check for corresponding errors:
 
 ## See also
 
-- [identify_source_target_mismatch.md](identify_source_target_mismatch.md) — queries to drill into per-prefix artifact differences
+- [02-identify_source_target_mismatch.md](02-identify_source_target_mismatch.md) — queries to drill into per-prefix artifact differences
 - [find-truly-missing-uris.sh](find-truly-missing-uris.sh) — AQL-based script to compare repos without `comparison.db`

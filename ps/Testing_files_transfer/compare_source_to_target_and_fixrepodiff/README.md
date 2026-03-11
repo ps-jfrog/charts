@@ -1,6 +1,19 @@
 # sync-target-from-source.sh — One-shot sync workflow
 
-This script automates **Steps 2 through 6** of [QUICKSTART.md](QUICKSTART.md): it runs the full compare-and-reconcile workflow (before-upload and after-upload), executes all generated reconciliation scripts, and runs post-sync verification queries so that the **target Artifactory matches the source** in one invocation.
+## Documentation index
+
+| # | Document | Description |
+|---|----------|-------------|
+| — | [README.md](README.md) (this file) | Overview of `sync-target-from-source.sh`, options, config files, and end-to-end workflow |
+| 1 | [01-QUICKSTART.md](01-QUICKSTART.md) | Step-by-step walkthrough: setup, first run, inspecting results |
+| 2 | [02-identify_source_target_mismatch.md](02-identify_source_target_mismatch.md) | Post-sync verification and debugging: queries to find missing/mismatched artifacts |
+| 3 | [03-README-troubleshooting-crawl-errors.md](03-README-troubleshooting-crawl-errors.md) | Crawl error recovery: diagnosing AQL failures, using `--sha1-resume` |
+
+**Helper references:** [README-compare-and-reconcile.md](README-compare-and-reconcile.md) | [README-verify-comparison-db.md](README-verify-comparison-db.md) | [README-retarget-sync-scripts.md](README-retarget-sync-scripts.md) | [README-group_sync_by_sha1.md](README-group_sync_by_sha1.md) | [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md) | [README-runcommand_in_parallel_from_file.md](README-runcommand_in_parallel_from_file.md)
+
+---
+
+This script automates **Steps 2 through 6** of [01-QUICKSTART.md](01-QUICKSTART.md): it runs the full compare-and-reconcile workflow (before-upload and after-upload), executes all generated reconciliation scripts, and runs post-sync verification queries so that the **target Artifactory matches the source** in one invocation.
 
 **Step 1** (setting environment variables) is not automated: you must set the required env vars before running the script, or pass a config file with `--config <file>`.
 
@@ -31,7 +44,7 @@ The script resolves its own directory so it can call `compare-and-reconcile.sh` 
 
 ## Prerequisites
 
-- Same as [QUICKSTART.md](QUICKSTART.md): JFrog CLI with compare plugin, CLI profiles for source and target (e.g. `app1`, `app2`), `jq`.
+- Same as [01-QUICKSTART.md](01-QUICKSTART.md): JFrog CLI with compare plugin, CLI profiles for source and target (e.g. `app1`, `app2`), `jq`.
 - **Supported scenario:** Case a (Artifactory SH → Artifactory Cloud). Other scenarios are not yet supported by this one-shot script.
 
 ---
@@ -222,7 +235,7 @@ When using **sync-target-from-source.sh**, the before-upload run writes its audi
 ## After the script finishes
 
 - Inspect failure logs in `b4_upload/*_out.txt` and `after_upload/*_out.txt` for any failed commands.
-- Verify from the target (e.g. **QUICKSTART.md Step 6**): Docker insecure registries, `docker login`, `docker pull` from the target.
+- Verify from the target (e.g. **01-QUICKSTART.md Step 6**): Docker insecure registries, `docker login`, `docker pull` from the target.
 - **Re-run verification queries** at any time using the standalone script (no need to re-run the full sync):
 
 ```bash
@@ -395,9 +408,9 @@ Common errors include `EOF` (connection closed by server), `TLS handshake timeou
 3. **Re-run the crawl** — transient errors often don't recur
 4. **Use folder-based crawl** — omit `--aql-style sha1-prefix` to crawl per-repo per-folder instead of by SHA1 prefix, which produces smaller per-query result sets and is more resilient to timeouts
 
-For detailed error explanations, impact analysis, verification queries, and mitigation examples, see [README-troubleshooting-crawl-errors.md](README-troubleshooting-crawl-errors.md).
+For detailed error explanations, impact analysis, verification queries, and mitigation examples, see [03-README-troubleshooting-crawl-errors.md](03-README-troubleshooting-crawl-errors.md).
 
-**Comparing runs:** see the crawl audit log header (`collect_stats`, `collect_props`) and diff commands in the [troubleshooting guide](README-troubleshooting-crawl-errors.md).
+**Comparing runs:** see the crawl audit log header (`collect_stats`, `collect_props`) and diff commands in the [troubleshooting guide](03-README-troubleshooting-crawl-errors.md).
 
 **Example crawl audit log** (`crawl-audit-app3-20260225-143012.log`):
 The sv-docker-local repo contains 4,500 files and 5,199 folders. The crawl audit log shows 5,200 folders because it includes the root folder (/) in the count.
@@ -435,7 +448,7 @@ errors:   2
 - **sha1-prefix folders** — entries are per-repo per-prefix, sorted alphabetically by repo, then by prefix.
 - **Diffing two runs** — the sorted order is deterministic regardless of worker parallelism.
 
-For a full multi-repo example, see the [troubleshooting guide](README-troubleshooting-crawl-errors.md).
+For a full multi-repo example, see the [troubleshooting guide](03-README-troubleshooting-crawl-errors.md).
 
 ---
 
@@ -506,4 +519,4 @@ See [README-retarget-sync-scripts.md](README-retarget-sync-scripts.md) for full 
 - **Two-pass:** Use `--generate-only` to generate scripts, review them, then `--run-only` to execute.
 - **One-shot:** You set env (or `--config`) once and run `./sync-target-from-source.sh`; it performs Steps 2–6 for you.
 
-For more control (e.g. running only some scripts or changing order), use the manual flow in [QUICKSTART.md](QUICKSTART.md).
+For more control (e.g. running only some scripts or changing order), use the manual flow in [01-QUICKSTART.md](01-QUICKSTART.md).

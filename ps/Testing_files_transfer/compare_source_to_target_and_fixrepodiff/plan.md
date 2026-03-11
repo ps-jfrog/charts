@@ -63,7 +63,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 ### 1.5 One-shot sync script (QUICKSTART automation)
 
-- [x] **T12** Create a new **single script** that automates **Step 1 through Step 5** of [QUICKSTART.md](QUICKSTART.md) (i.e. from "Set environment variables" through "Run the after-upload reconciliation scripts"), so that one invocation runs the full sync workflow end-to-end without manual step execution. Scope:
+- [x] **T12** Create a new **single script** that automates **Step 1 through Step 5** of [01-QUICKSTART.md](01-QUICKSTART.md) (i.e. from "Set environment variables" through "Run the after-upload reconciliation scripts"), so that one invocation runs the full sync workflow end-to-end without manual step execution. Scope:
   - **Step 1:** Set (or accept) environment variables: scenario (e.g. Artifactory SH → Cloud), source/target URLs and authorities, `ARTIFACTORY_DISCOVERY_METHOD`, `RECONCILE_OUTPUT_DIR` for both b4-upload and after-upload output dirs, and optional repo filters (`SH_ARTIFACTORY_REPOS`, `CLOUD_ARTIFACTORY_REPOS`). The script may accept these as arguments, env vars, or a config file; design to be decided at implementation.
   - **Step 2:** Run `compare-and-reconcile.sh --b4upload --collect-stats-properties --reconcile --target-only` with the b4-upload output dir.
   - **Step 3:** Run the before-upload reconciliation scripts in order: optionally 01/02 if consolidation is needed; then 03 (sync binaries), optionally 04 (sync delayed), 05 (sync stats), 06 (sync folder props), using `runcommand_in_parallel_from_file.sh` with appropriate concurrency and log paths (e.g. `--log-success`, failure log per script).
@@ -96,7 +96,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
 ### 1.8 QUICKSTART: automated one-shot testing examples
 
-- [x] **T15** Add a section to [QUICKSTART.md](QUICKSTART.md) (in or near the "One-shot option" section) showing how to run `sync-target-from-source.sh` with each example config file, covering both **default AQL style** and **`--aql-style sha1-prefix`** crawl modes. Include:
+- [x] **T15** Add a section to [01-QUICKSTART.md](01-QUICKSTART.md) (in or near the "One-shot option" section) showing how to run `sync-target-from-source.sh` with each example config file, covering both **default AQL style** and **`--aql-style sha1-prefix`** crawl modes. Include:
 
   **Default AQL style (repo-based crawl):**
   ```bash
@@ -123,7 +123,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - `--run-delayed` is optional and usually not needed. `05_to_sync_stats.sh` creates Docker manifests via checksum-deploy, which implicitly creates parent folders. Use `--run-delayed` only if you want to explicitly run `04_to_sync_delayed.sh` before the stats sync.
   - Reference the example config files in `config_env_examples/` and their scenarios.
 
-**Implemented:** Added "Example one-shot runs with config files" subsection to QUICKSTART.md under the "One-shot option" section, with all six example commands (three default, three sha1-prefix) and a note about `--run-delayed` being optional.
+**Implemented:** Added "Example one-shot runs with config files" subsection to 01-QUICKSTART.md under the "One-shot option" section, with all six example commands (three default, three sha1-prefix) and a note about `--run-delayed` being optional.
 
 ### 1.9 Split generation and execution of reconciliation scripts
 
@@ -172,7 +172,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   bash sync-target-from-source.sh --config env.sh --run-only --run-delayed --run-folder-stats
   ```
 
-  - Update help text in `sync-target-from-source.sh`, and document in `README.md` and `QUICKSTART.md`.
+  - Update help text in `sync-target-from-source.sh`, and document in `README.md` and `01-QUICKSTART.md`.
 
 **Implemented:** Added `--generate-only`, `--run-only`, and `--run-folder-stats` CLI flags with mutual-exclusion validation. `--generate-only` runs Step 2 then prints script summary and exits. `--run-only` skips Step 2, validates output dir exists, then executes Steps 3–5. `09_to_sync_folder_stats_as_properties.sh` is skipped unless `--run-folder-stats` is provided. Help text updated.
 
@@ -182,10 +182,10 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - **compare-and-reconcile.sh:** Accept `--include-remote-cache` CLI option; also read from env `COMPARE_INCLUDE_REMOTE_CACHE`. Build a flag string (e.g. `INCLUDE_REMOTE_CACHE_FLAG="--include-remote-cache"`) and append to all active `jf compare list` calls. If not set, no flag is passed (default: only LOCAL/FEDERATED repos).
   - **sync-target-from-source.sh:** Accept `--include-remote-cache` CLI option; pass through to `compare-and-reconcile.sh` via env `COMPARE_INCLUDE_REMOTE_CACHE` or CLI arg.
   - **Config env files:** Optionally set `COMPARE_INCLUDE_REMOTE_CACHE=1`.
-  - **Documentation:** Update help text in both scripts, and document in `README-compare-and-reconcile.md`, `README.md`, and `QUICKSTART.md`.
+  - **Documentation:** Update help text in both scripts, and document in `README-compare-and-reconcile.md`, `README.md`, and `01-QUICKSTART.md`.
   - **Background:** The compare plugin (`aql.go` line 462) filters repos by type: only `LOCAL`, `FEDERATED`, `VIRTUAL` (if `--include-virtual`), and `REMOTE` (if `--include-remote` or `--include-remote-cache`) are included. The default folder-based crawl iterates `allowedRepos` — if the repo is filtered out, nothing is crawled. The sha1-prefix style accidentally works around this because an empty `allowedRepos` omits the repo filter from the AQL query, querying all repos on the server.
 
-  **Implemented:** Added `--include-remote-cache` CLI flag and `COMPARE_INCLUDE_REMOTE_CACHE` env variable to both `compare-and-reconcile.sh` and `sync-target-from-source.sh`. The flag is appended to all `jf compare list` calls. Help text updated in both scripts. Documentation updated in `README-compare-and-reconcile.md`, `README.md`, and `QUICKSTART.md` (including example commands for npm remote-cache configs).
+  **Implemented:** Added `--include-remote-cache` CLI flag and `COMPARE_INCLUDE_REMOTE_CACHE` env variable to both `compare-and-reconcile.sh` and `sync-target-from-source.sh`. The flag is appended to all `jf compare list` calls. Help text updated in both scripts. Documentation updated in `README-compare-and-reconcile.md`, `README.md`, and `01-QUICKSTART.md` (including example commands for npm remote-cache configs).
 
 ### 1.11 Timing report for sync-target-from-source.sh
 
@@ -241,7 +241,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - This step runs after both the before-upload and after-upload phases are complete (i.e. at the very end of the script, after Step 5).
   - If `jf compare query` is not available (older plugin version), skip gracefully with a note.
 
-  **Documentation subtask:** Update the [QUICKSTART.md](QUICKSTART.md) "Inspecting comparison.db" section to show `jf compare query` equivalents for every `sqlite3` query (sections a–i). For each query, add an alternative using `jf compare query` so users without `sqlite3` installed can run the same inspections. For example:
+  **Documentation subtask:** Update the [01-QUICKSTART.md](01-QUICKSTART.md) "Inspecting comparison.db" section to show `jf compare query` equivalents for every `sqlite3` query (sections a–i). For each query, add an alternative using `jf compare query` so users without `sqlite3` installed can run the same inspections. For example:
   ```
   # Using sqlite3:
   sqlite3 -header -column comparison.db "SELECT id, pattern, reason, enabled, priority FROM exclusion_rules ORDER BY priority, id;"
@@ -251,7 +251,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
   ```
   Also update the introductory note to mention that `jf compare query` can be used as an alternative to `sqlite3` for all queries in this section, and update the `SELECT DISTINCT source, repository_name FROM artifacts` discovery query in the note.
 
-**Implemented:** Created standalone [verify-comparison-db.sh](verify-comparison-db.sh) script that accepts `--source <authority>` and `--repos <csv>` (with env fallbacks `SH_ARTIFACTORY_AUTHORITY` / `SH_ARTIFACTORY_REPOS`). Runs four `jf compare query` calls: exclusion rules, cross-instance mapping, reason category counts (filtered by source), and excluded files sample (per repo). Graceful exit if `jf compare query` is not available. `sync-target-from-source.sh` Step 6 calls this script. Updated `QUICKSTART.md` "Inspecting comparison.db" section with `jf compare query` alternatives (comment lines) for all queries in sections a–i and "Verifying excluded files". Added introductory tip about `jf compare query` as a `sqlite3` alternative.
+**Implemented:** Created standalone [verify-comparison-db.sh](verify-comparison-db.sh) script that accepts `--source <authority>` and `--repos <csv>` (with env fallbacks `SH_ARTIFACTORY_AUTHORITY` / `SH_ARTIFACTORY_REPOS`). Runs four `jf compare query` calls: exclusion rules, cross-instance mapping, reason category counts (filtered by source), and excluded files sample (per repo). Graceful exit if `jf compare query` is not available. `sync-target-from-source.sh` Step 6 calls this script. Updated `01-QUICKSTART.md` "Inspecting comparison.db" section with `jf compare query` alternatives (comment lines) for all queries in sections a–i and "Verifying excluded files". Added introductory tip about `jf compare query` as a `sqlite3` alternative.
 
 ### 1.14 Enhanced per-repository verification report
 
@@ -308,9 +308,9 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - Each count query should be run first, with its result printed in the section header. Then the listing query follows.
   - The `missing` view is the correct source for missing files (it already excludes delays and exclusions via `exclusions.reason IS NULL`).
   - The `comparison_reasons` view with `reason_category = 'delay'` or `reason_category = 'exclude'` is the correct source for delay and excluded files respectively.
-  - Update `QUICKSTART.md` and `README-verify-comparison-db.md` to document the new report format.
+  - Update `01-QUICKSTART.md` and `README-verify-comparison-db.md` to document the new report format.
 
-  **Implemented:** Replaced the generic per-repo `comparison_reasons` loop in `verify-comparison-db.sh` with three sub-sections per repository: (1) Missing files — count + first 20 from `missing` view, (2) Delay files — count + first 20 from `comparison_reasons WHERE reason_category = 'delay'`, (3) Excluded files — count + first 20 from `comparison_reasons WHERE reason_category = 'exclude'`. Count queries use `--csv --header=false` to extract the raw number for the section header. Listing queries only run when count > 0. Updated `QUICKSTART.md` script reference table and `README-verify-comparison-db.md` (description, options table, "What it displays" section with sample output).
+  **Implemented:** Replaced the generic per-repo `comparison_reasons` loop in `verify-comparison-db.sh` with three sub-sections per repository: (1) Missing files — count + first 20 from `missing` view, (2) Delay files — count + first 20 from `comparison_reasons WHERE reason_category = 'delay'`, (3) Excluded files — count + first 20 from `comparison_reasons WHERE reason_category = 'exclude'`. Count queries use `--csv --header=false` to extract the raw number for the section header. Listing queries only run when count > 0. Updated `01-QUICKSTART.md` script reference table and `README-verify-comparison-db.md` (description, options table, "What it displays" section with sample output).
 
 ### 1.15 Retarget sync scripts to a different target repo
 
@@ -366,9 +366,9 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - The `sed` replacement pattern should match the repo name at the start of the upload path: `" "<old-repo>/` → `" "<new-repo>/`. This handles both `jf rt u` commands (where the repo is the first path component of the upload target) and `jf rt cp` commands (where the repo prefix appears similarly).
   - For `05_to_sync_stats.sh` and `06_to_sync_folder_props.sh`, the repo name appears in `jf rt curl` or `jf rt sp` commands — the replacement pattern may differ (e.g. `/api/storage/<repo>/` or `"<repo>/path"`). The script should handle both patterns.
   - Document the script in `README.md` (new section after "Verifying that missing artifacts exist in the source") and create a `README-retarget-sync-scripts.md`.
-  - Add the script to the `QUICKSTART.md` script reference table.
+  - Add the script to the `01-QUICKSTART.md` script reference table.
 
-  **Implemented:** Created `retarget-sync-scripts.sh` with `--source-dir`, `--target-dir`, `--old-repo`, `--new-repo`, and optional `--old-server-id`/`--new-server-id` flags. Copies 03–06 from source `b4_upload/` to target `b4_upload/` and rewrites repo names using tailored sed patterns per script type: `"OLD/` → `"NEW/` for 03/04/06, `"/OLD/` → `"/NEW/` for 05 (curl API paths). Server-id replacement on 03/04 targets only the upload side (after `&&`). Prints summary with line counts and substitution counts, followed by next-steps guidance (create config with new `CLOUD_ARTIFACTORY_REPOS`/`RECONCILE_BASE_DIR`, run `sync-target-from-source.sh --run-only --skip-consolidation --run-delayed`). Added "Retargeting sync scripts to a different repository" section to `README.md`, created `README-retarget-sync-scripts.md` with full documentation and examples, added entry to `QUICKSTART.md` script reference table.
+  **Implemented:** Created `retarget-sync-scripts.sh` with `--source-dir`, `--target-dir`, `--old-repo`, `--new-repo`, and optional `--old-server-id`/`--new-server-id` flags. Copies 03–06 from source `b4_upload/` to target `b4_upload/` and rewrites repo names using tailored sed patterns per script type: `"OLD/` → `"NEW/` for 03/04/06, `"/OLD/` → `"/NEW/` for 05 (curl API paths). Server-id replacement on 03/04 targets only the upload side (after `&&`). Prints summary with line counts and substitution counts, followed by next-steps guidance (create config with new `CLOUD_ARTIFACTORY_REPOS`/`RECONCILE_BASE_DIR`, run `sync-target-from-source.sh --run-only --skip-consolidation --run-delayed`). Added "Retargeting sync scripts to a different repository" section to `README.md`, created `README-retarget-sync-scripts.md` with full documentation and examples, added entry to `01-QUICKSTART.md` script reference table.
 
 ### 1.16 Skip stats/properties collection during compare
 
@@ -387,9 +387,9 @@ This document defines implementation tasks and a step-by-step workflow for a new
   - Add `SKIP_COLLECT_STATS_PROPERTIES=0` variable.
   - Add `--skip-collect-stats-properties` option parsing.
   - In Step 2 and Step 4, conditionally include `--collect-stats-properties` based on the flag.
-  - Update `show_help`, `README.md` options table, and `QUICKSTART.md`.
+  - Update `show_help`, `README.md` options table, and `01-QUICKSTART.md`.
 
-  **Implemented:** Added `SKIP_COLLECT_STATS_PROPERTIES` variable and `--skip-collect-stats-properties` option parsing. Steps 2 and 4 now build a `STEP2_ARGS`/`STEP4_ARGS` array and conditionally include `--collect-stats-properties` only when the flag is not set. Updated `show_help` with the new option. Added the option to `README.md` options table and `QUICKSTART.md` (options list and two-pass workflow note).
+  **Implemented:** Added `SKIP_COLLECT_STATS_PROPERTIES` variable and `--skip-collect-stats-properties` option parsing. Steps 2 and 4 now build a `STEP2_ARGS`/`STEP4_ARGS` array and conditionally include `--collect-stats-properties` only when the flag is not set. Updated `show_help` with the new option. Added the option to `README.md` options table and `01-QUICKSTART.md` (options list and two-pass workflow note).
 
 ### 1.17 Basic artifact crawl when stats/properties collection is skipped
 
@@ -434,7 +434,7 @@ This document defines implementation tasks and a step-by-step workflow for a new
 
   **Documentation:**
   - Update `README.md` troubleshooting section to mention the crawl audit log as the first step for diagnosing artifact count discrepancies.
-  - Update `QUICKSTART.md` with a note about the log file.
+  - Update `01-QUICKSTART.md` with a note about the log file.
   - Document how to compare crawl logs from runs with and without `--collect-stats --collect-properties` to verify that the same prefixes return the same item counts — confirming the discrepancy is due to transient errors, not the flag itself.
   - Document the Example output file format (crawl-audit-app3-20260225-143012.log) and where to find it :
 
@@ -462,15 +462,15 @@ elapsed:  3m 42.15s
 errors:   0
 ```
 
-  **Implemented:** Added `_show_crawl_audit_log` helper in `compare-and-reconcile.sh` that echoes the latest crawl audit log path after each `jf compare list` call. Added crawl audit log listing in the `--generate-only` summary in `sync-target-from-source.sh`. Added "Diagnosing artifact count discrepancies with the crawl audit log" section to `README.md`. Added crawl audit log note to "Command audit logs" section in `QUICKSTART.md`.
+  **Implemented:** Added `_show_crawl_audit_log` helper in `compare-and-reconcile.sh` that echoes the latest crawl audit log path after each `jf compare list` call. Added crawl audit log listing in the `--generate-only` summary in `sync-target-from-source.sh`. Added "Diagnosing artifact count discrepancies with the crawl audit log" section to `README.md`. Added crawl audit log note to "Command audit logs" section in `01-QUICKSTART.md`.
 
 ### 1.20 Document per-prefix mismatch investigation queries
 
-- [x] **T27** Create `identify_source_target_mismatch.md` with `jf compare query` and AQL examples for drilling into per-prefix artifact count differences between source and target crawls.
+- [x] **T27** Create `02-identify_source_target_mismatch.md` with `jf compare query` and AQL examples for drilling into per-prefix artifact count differences between source and target crawls.
 
   **What it covers:** Queries against `comparison.db` to count artifacts per side per SHA1 prefix, find artifacts unique to source or target, produce a source-only/target-only/both breakdown, and verify counts directly via Artifactory AQL.
 
-  **See:** [identify_source_target_mismatch.md](identify_source_target_mismatch.md)
+  **See:** [02-identify_source_target_mismatch.md](02-identify_source_target_mismatch.md)
 
 ### 1.21 Resume failed sha1-prefix crawl via shell wrapper
 
@@ -489,7 +489,7 @@ errors:   0
        paste -sd, -
      ```
      Output example: `f2:40000,f3:40000,f8:30000,f9:30000,fa:25000,fc:25000,fe:20000,ff:15000`
-  4. Document usage in `README-troubleshooting-crawl-errors.md` as a mitigation step: instead of re-running the full 5+ hour crawl, resume only the failed prefixes in minutes.
+  4. Document usage in `03-README-troubleshooting-crawl-errors.md` as a mitigation step: instead of re-running the full 5+ hour crawl, resume only the failed prefixes in minutes.
 
   **Recommended resume workflow:**
 

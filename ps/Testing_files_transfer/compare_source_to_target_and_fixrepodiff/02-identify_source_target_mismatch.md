@@ -197,6 +197,18 @@ jf compare query "SELECT a.repository_name, a.uri, a.sha1, a.size FROM artifacts
 > | `sync_normalized_pending_delayed` | — | `04_to_sync_delayed.sh` | `reason LIKE 'delay:%'` (delayed) |
 >
 > Together, `sync_missing` + `sync_normalized_pending_delayed` cover all artifacts that need syncing (non-excluded + delayed). If your repo mappings are clean and no exclusion rules are triggered, their combined results should match the 5b results. The 5b query above is a raw, unfiltered check against the `artifacts` table — useful for independent verification without exclusion/mapping logic.
+>
+> **Related views for comparing artifacts that exist on both sides:**
+>
+> | View | Purpose | Key logic |
+> |------|---------|-----------|
+> | `sync_normalized_pending` | Intermediate view behind `sync_missing` / `reconcile_phase2_sync`. Lists non-excluded source artifacts (`reason IS NULL`) that are missing on the mapped target repo, after applying normalization dedup and `target_exists` checks. | JOINs `target_repo_exists` with `exclusions` (source side), LEFT JOINs `artifacts` (target side); rows where the target artifact is NULL are "pending sync". |
+> | `sync_match` | Artifacts that exist on **both** source and target with **identical checksums** — already in sync, no action needed. | Filters `sync_comparable` where `sha1_source = sha1_target` (and sha2 matches if both present). |
+> | `sync_mismatch` | Artifacts that exist on **both** sides but have **different checksums** — the target copy is stale or corrupted and needs re-sync. | Filters `sync_comparable` where `sha1_source != sha1_target` or sha2 differs; labels the mismatch type (`sha1 mismatch`, `sha2 mismatch`). |
+> | `sync_diff` | Union of `sync_missing` (type = `missing`) and `sync_mismatch` (type = checksum mismatch) — all artifacts that differ between source and target. | `UNION ALL` of the two views with a unified column set. |
+> | `sync_diff_summary` | Aggregated counts from `sync_diff`, grouped by repo pair and difference type — quick overview of how many artifacts are missing vs. mismatched per repo. | `GROUP BY equivalence_key, source, source_repo, target, target_repo, type` with `COUNT(*)`. |
+>
+> `sync_comparable` (the base for `sync_match` / `sync_mismatch`) only contains artifacts that exist on **both** source and target (inner JOIN on `exclusions` for both sides), so it is empty when the target repo has zero artifacts. In that scenario, `sync_match`, `sync_mismatch`, and `sync_diff` will only show `missing`-type rows from `sync_missing`.
 
 ### 5b-aql. Verify truly missing URIs directly via Artifactory AQL
 
