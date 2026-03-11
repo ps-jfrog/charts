@@ -561,6 +561,45 @@ errors:   0
   - Progressively reducing `--aql-page-size` (5000 → 2000 → 500) narrows in on the most
     stubborn prefixes with the smallest possible request payload.
 
+- [x] **T29** Add `--sha1-resume-authority <authority>` flag to scope `--sha1-resume` to a single authority, skipping the other.
+
+  **Use case:** When a sha1-prefix crawl encounters errors (EOF, TLS timeout, HTTP 500), the failures typically occur on only one authority — usually the target, which may be under heavier load or have larger repos. Currently, `--sha1-resume` re-crawls the specified prefixes on **both** source and target authorities, even though the source crawl completed successfully. For example, if the crawl audit log for the target (`crawl-audit-psazuse1-*.log`) shows 8 failed prefixes but the source (`crawl-audit-psazuse-*.log`) has zero errors, the resume still sends all 8 prefix:offset pairs to the source — wasting time and API calls on an authority whose data is already fully present in `comparison.db`.
+
+  **Scope: shell wrapper only — no plugin changes needed.** The `jf compare list` plugin command already operates on a single authority per invocation (`authority := c.Arguments[0]` in `list.go`). The `--sha1-resume` flag is already per-call. The filtering logic lives entirely in `compare-and-reconcile.sh`, which calls `jf compare list` separately for each authority (SH and CLOUD). The fix is to conditionally skip the `jf compare list` call for the authority that does not match `--sha1-resume-authority`, or to omit `$SHA1_RESUME_FLAG` from that call.
+
+  **Implementation:**
+
+  1. Add `--sha1-resume-authority <authority-id>` flag to `sync-target-from-source.sh` and pass it through to `compare-and-reconcile.sh` (same pattern as `--sha1-resume`). Also support env variable `COMPARE_SHA1_RESUME_AUTHORITY`.
+  2. In `compare-and-reconcile.sh`, at each `jf compare list` call site (lines that append `$SHA1_RESUME_FLAG`):
+     - If `SHA1_RESUME_AUTHORITY` is set and the current authority **does not** match it, **skip that `jf compare list` call entirely** (the authority's data is already fully present in `comparison.db` from the original run). Print a message: `"=== Skipping <authority> (--sha1-resume-authority targets <other> only) ==="`.
+     - If `SHA1_RESUME_AUTHORITY` is set and the current authority **matches**, run `jf compare list` with `$SHA1_RESUME_FLAG` as before.
+     - If `SHA1_RESUME_AUTHORITY` is **not** set, preserve current behavior: `$SHA1_RESUME_FLAG` is appended to all calls.
+  3. Update `show_help` in both scripts, add the option to the `README.md` options table.
+  4. Update `03-README-troubleshooting-crawl-errors.md` to show the optimized resume command with `--sha1-resume-authority`.
+
+  **Example usage:**
+
+  ```bash
+  # Errors only in target (psazuse1) crawl audit log — source (psazuse) was clean:
+  RESUME=$(grep ERROR crawl-audit-psazuse1-*.log | \
+    sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+    paste -sd, -)
+
+  bash sync-target-from-source.sh \
+    --config <config> \
+    --generate-only --skip-collect-stats-properties \
+    --include-remote-cache --aql-style sha1-prefix \
+    --aql-page-size 2000 --folder-parallel 16 \
+    --sha1-resume "$RESUME" \
+    --sha1-resume-authority psazuse1
+  ```
+
+  This re-crawls only the failed prefixes on `psazuse1` (target), skipping `psazuse` (source) entirely — halving the resume time when only one side had errors.
+
+  **When `--sha1-resume-authority` is omitted:** Fully backward-compatible — `--sha1-resume` applies to both authorities, same as today.
+
+  **Implemented:** Added `--sha1-resume-authority <id>` flag and `COMPARE_SHA1_RESUME_AUTHORITY` env variable to both `sync-target-from-source.sh` and `compare-and-reconcile.sh`. In `compare-and-reconcile.sh`, added `_should_skip_authority` and `_resume_flag_for` helpers; all six `jf compare list` call sites now skip the crawl entirely when the authority does not match, printing a skip message instead. Updated `README.md` options table (also added missing `--sha1-resume` row) and `03-README-troubleshooting-crawl-errors.md` with a `--sha1-resume-authority` example.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

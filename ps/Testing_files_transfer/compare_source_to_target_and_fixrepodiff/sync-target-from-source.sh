@@ -54,6 +54,7 @@ RUN_ONLY=0
 RUN_FOLDER_STATS=0
 SKIP_COLLECT_STATS_PROPERTIES=0
 SHA1_RESUME=""
+SHA1_RESUME_AUTHORITY=""
 VERIFICATION_CSV=""
 VERIFICATION_CSV_ENABLED=0
 VERIFICATION_NO_LIMIT=0
@@ -102,6 +103,11 @@ OPTIONS:
                         Skips 'init --clean' to preserve existing comparison.db. Can be combined
                         with a smaller --aql-page-size to avoid repeat failures. Repeatable until
                         all errors are resolved. Also settable via env COMPARE_SHA1_RESUME.
+  --sha1-resume-authority <id>
+                        Scope --sha1-resume to a single authority. Only the named authority is
+                        re-crawled; the other is skipped (its data is already in comparison.db).
+                        When omitted, --sha1-resume applies to all authorities. Also settable
+                        via env COMPARE_SHA1_RESUME_AUTHORITY.
   --verification-csv [dir]  Write CSV report files during Step 6 verification (one file per
                         section per repo). If <dir> is omitted, defaults to RECONCILE_BASE_DIR.
                         Passed to verify-comparison-db.sh --csv.
@@ -171,6 +177,11 @@ while [[ $# -gt 0 ]]; do
     --sha1-resume)
       [[ $# -lt 2 ]] && { echo "Error: --sha1-resume requires prefix:offset pairs (e.g. f2:40000,f3:40000)." >&2; exit 1; }
       SHA1_RESUME="$2"
+      shift 2
+      ;;
+    --sha1-resume-authority)
+      [[ $# -lt 2 ]] && { echo "Error: --sha1-resume-authority requires an authority id." >&2; exit 1; }
+      SHA1_RESUME_AUTHORITY="$2"
       shift 2
       ;;
     --generate-only)
@@ -247,6 +258,9 @@ fi
 
 # SHA1 resume: CLI flag overrides env; env from config is also respected
 [[ -n "$SHA1_RESUME" ]] && export COMPARE_SHA1_RESUME="$SHA1_RESUME"
+
+# SHA1 resume authority: CLI flag overrides env; env from config is also respected
+[[ -n "$SHA1_RESUME_AUTHORITY" ]] && export COMPARE_SHA1_RESUME_AUTHORITY="$SHA1_RESUME_AUTHORITY"
 
 # Output dirs: respect RECONCILE_BASE_DIR from config or environment
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"

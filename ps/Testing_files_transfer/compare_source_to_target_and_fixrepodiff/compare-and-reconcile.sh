@@ -72,6 +72,10 @@ OPTIONS:
   --sha1-resume <pairs>        Resume a failed sha1-prefix crawl. <pairs> is comma-separated
                                prefix:offset (e.g. f2:40000,f3:40000). Skips 'init --clean' to
                                preserve existing comparison.db. Also settable via env COMPARE_SHA1_RESUME.
+  --sha1-resume-authority <id> Scope --sha1-resume to a single authority. Only the named authority
+                               is re-crawled; the other is skipped entirely (its data is already in
+                               comparison.db). When omitted, --sha1-resume applies to all authorities.
+                               Also settable via env COMPARE_SHA1_RESUME_AUTHORITY.
   -h, --help                   Show this help.
 
 ENVIRONMENT (same as compare-artifacts.sh):
@@ -95,6 +99,7 @@ RECONCILIATION:
   COMPARE_FOLDER_PARALLEL=<N>  Same as --folder-parallel (e.g. 16). Appended to all 'jf compare list' calls.
   COMPARE_INCLUDE_REMOTE_CACHE=1  Same as --include-remote-cache.
   COMPARE_SHA1_RESUME=<pairs>  Same as --sha1-resume (e.g. f2:40000,f3:40000).
+  COMPARE_SHA1_RESUME_AUTHORITY=<id>  Same as --sha1-resume-authority (e.g. psazuse1).
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
@@ -111,6 +116,7 @@ AQL_PAGE_SIZE="${COMPARE_AQL_PAGE_SIZE:-}"
 FOLDER_PARALLEL="${COMPARE_FOLDER_PARALLEL:-}"
 INCLUDE_REMOTE_CACHE="${COMPARE_INCLUDE_REMOTE_CACHE:-0}"
 SHA1_RESUME="${COMPARE_SHA1_RESUME:-}"
+SHA1_RESUME_AUTHORITY="${COMPARE_SHA1_RESUME_AUTHORITY:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --b4upload)
@@ -155,6 +161,11 @@ while [[ $# -gt 0 ]]; do
         --sha1-resume)
             [[ $# -lt 2 ]] && { echo "Error: --sha1-resume requires prefix:offset pairs (e.g. f2:40000,f3:40000)." >&2; exit 1; }
             SHA1_RESUME="$2"
+            shift 2
+            ;;
+        --sha1-resume-authority)
+            [[ $# -lt 2 ]] && { echo "Error: --sha1-resume-authority requires an authority id." >&2; exit 1; }
+            SHA1_RESUME_AUTHORITY="$2"
             shift 2
             ;;
         -h|--help)
@@ -308,6 +319,7 @@ echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIE
 [ -n "$FOLDER_PARALLEL" ] && echo "Folder parallel workers: $FOLDER_PARALLEL"
 [[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && echo "Include remote-cache repos: yes"
 [ -n "$SHA1_RESUME" ] && echo "SHA1 resume: $SHA1_RESUME"
+[ -n "$SHA1_RESUME_AUTHORITY" ] && echo "SHA1 resume authority: $SHA1_RESUME_AUTHORITY"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -330,6 +342,20 @@ _show_crawl_audit_log() {
   _latest=$(ls -t crawl-audit-"${_authority}"-*.log 2>/dev/null | head -1)
   if [ -n "$_latest" ]; then
     echo "  Crawl audit log: $_latest"
+  fi
+}
+
+_should_skip_authority() {
+  local authority="$1"
+  [[ -n "$SHA1_RESUME" ]] && [[ -n "$SHA1_RESUME_AUTHORITY" ]] && [[ "$SHA1_RESUME_AUTHORITY" != "$authority" ]]
+}
+
+_resume_flag_for() {
+  local authority="$1"
+  if [[ -n "$SHA1_RESUME" ]]; then
+    if [[ -z "$SHA1_RESUME_AUTHORITY" ]] || [[ "$SHA1_RESUME_AUTHORITY" == "$authority" ]]; then
+      echo "$SHA1_RESUME_FLAG"
+    fi
   fi
 }
 
@@ -369,13 +395,18 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_SH" == "1" ]; then
     _audit_run $COMMAND_NAME authority-add "$SH_ARTIFACTORY_AUTHORITY" "$SH_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$SH_ARTIFACTORY_AUTHORITY" --cli-profile="$SH_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
     if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
-        echo "=== Listing artifacts on SH ($SH_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
-        if [ -n "${SH_LIST_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+        if _should_skip_authority "$SH_ARTIFACTORY_AUTHORITY"; then
+            echo "=== Skipping SH ($SH_ARTIFACTORY_AUTHORITY) — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
         else
-            _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+            echo "=== Listing artifacts on SH ($SH_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
+            local_resume=$(_resume_flag_for "$SH_ARTIFACTORY_AUTHORITY")
+            if [ -n "${SH_LIST_REPOS:-}" ]; then
+                _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            else
+                _audit_run $COMMAND_NAME list "$SH_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            fi
+            _show_crawl_audit_log "$SH_ARTIFACTORY_AUTHORITY"
         fi
-        _show_crawl_audit_log "$SH_ARTIFACTORY_AUTHORITY"
     fi
     echo ""
 fi
@@ -386,13 +417,18 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_CLOUD" == "1" ]; then
     _audit_run $COMMAND_NAME authority-add "$CLOUD_ARTIFACTORY_AUTHORITY" "$CLOUD_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$CLOUD_ARTIFACTORY_AUTHORITY" --cli-profile="$CLOUD_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
     if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
-        echo "=== Listing artifacts on Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
-        if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+        if _should_skip_authority "$CLOUD_ARTIFACTORY_AUTHORITY"; then
+            echo "=== Skipping Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
         else
-            _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+            echo "=== Listing artifacts on Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — basic crawl (no stats/properties) ==="
+            local_resume=$(_resume_flag_for "$CLOUD_ARTIFACTORY_AUTHORITY")
+            if [ -n "${CLOUD_LIST_REPOS:-}" ]; then
+                _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" --repos="$CLOUD_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            else
+                _audit_run $COMMAND_NAME list "$CLOUD_ARTIFACTORY_AUTHORITY" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            fi
+            _show_crawl_audit_log "$CLOUD_ARTIFACTORY_AUTHORITY"
         fi
-        _show_crawl_audit_log "$CLOUD_ARTIFACTORY_AUTHORITY"
     fi
     echo ""
 fi
@@ -408,22 +444,32 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
     else
         # In Case a (SH->Cloud), collect properties on source (SH) so property sync views use source=SH, target=Cloud
         if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
-            echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
-            if [ -n "${SH_LIST_REPOS:-}" ]; then
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+            if _should_skip_authority "$SOURCE_AUTHORITY"; then
+                echo "=== Skipping source ($SOURCE_AUTHORITY) stats/properties — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
             else
-                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+                echo "=== Collecting stats and properties on source ($SOURCE_AUTHORITY) for property sync alignment ==="
+                local_resume=$(_resume_flag_for "$SOURCE_AUTHORITY")
+                if [ -n "${SH_LIST_REPOS:-}" ]; then
+                    _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties --repos="$SH_LIST_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+                else
+                    _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+                fi
+                _show_crawl_audit_log "$SOURCE_AUTHORITY"
+                echo ""
             fi
-            _show_crawl_audit_log "$SOURCE_AUTHORITY"
-            echo ""
         fi
-        echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
-        if [ -n "${TARGET_REPOS:-}" ]; then
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+        if _should_skip_authority "$TARGET_AUTHORITY"; then
+            echo "=== Skipping target ($TARGET_AUTHORITY) stats/properties — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
         else
-            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $SHA1_RESUME_FLAG
+            echo "=== Collecting stats and properties on target ($TARGET_AUTHORITY) ==="
+            local_resume=$(_resume_flag_for "$TARGET_AUTHORITY")
+            if [ -n "${TARGET_REPOS:-}" ]; then
+                _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties --repos="$TARGET_REPOS" $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            else
+                _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" --collect-stats --collect-properties $AQL_STYLE_FLAG $AQL_PAGE_SIZE_FLAG $FOLDER_PARALLEL_FLAG $INCLUDE_REMOTE_CACHE_FLAG $local_resume
+            fi
+            _show_crawl_audit_log "$TARGET_AUTHORITY"
         fi
-        _show_crawl_audit_log "$TARGET_AUTHORITY"
         echo ""
     fi
 fi

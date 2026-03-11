@@ -277,6 +277,26 @@ bash sync-target-from-source.sh \
 
 Each resume run is idempotent: it produces its own timestamped audit log, merges results into the same `comparison.db`, and can be repeated as many times as needed.
 
+**Scope resume to a single authority with `--sha1-resume-authority`.** When errors occurred on only one authority (e.g. the target), you can skip re-crawling the other authority entirely:
+
+```bash
+# Errors only in the target audit log — source was clean:
+RESUME=$(grep ERROR crawl-audit-psazuse1-*.log | \
+  sed -n 's/.*prefix=\([a-f0-9]*\) offset=\([0-9]*\).*/\1:\2/p' | \
+  paste -sd, -)
+
+bash sync-target-from-source.sh \
+  --config <config> \
+  --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 2000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit \
+  --sha1-resume "$RESUME" \
+  --sha1-resume-authority psazuse1
+```
+
+This re-crawls only the failed prefixes on `psazuse1` (target), skipping the source authority entirely — halving the resume time when only one side had errors. When `--sha1-resume-authority` is omitted, `--sha1-resume` applies to both authorities (default behavior).
+
 ### 4. Re-run the full crawl
 
 If `--sha1-resume` is not available or you prefer a clean slate, a full re-run may succeed for the previously failed prefixes since `jf compare list` repopulates `comparison.db`:
