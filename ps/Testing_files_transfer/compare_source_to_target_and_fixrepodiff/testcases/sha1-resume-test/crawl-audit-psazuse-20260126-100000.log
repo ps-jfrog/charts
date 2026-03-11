@@ -1,0 +1,34 @@
+--- crawl-audit ---
+authority: psazuse
+aql_style: sha1-prefix
+repos: npmjs-remote-cache
+page_size: 10
+collect_stats: false
+collect_properties: false
+sha1_prefix_len: 2
+sha1_parallel: 16
+folder_parallel: 16
+---
+[sha1-prefix files]  prefix=00  items=8  pages=1  final_offset=8
+[sha1-prefix files]  ERROR  prefix=00 offset=10: Post "https://psazuse.jfrog.io/artifactory/api/search/aql": EOF
+[sha1-prefix files]  prefix=01  items=7  pages=1  final_offset=7
+[sha1-prefix files]  ERROR  prefix=01 offset=10: Post "https://psazuse.jfrog.io/artifactory/api/search/aql": net/http: TLS handshake timeout
+[sha1-prefix files]  prefix=02  items=12  pages=2  final_offset=12
+[sha1-prefix files]  prefix=03  items=9  pages=1  final_offset=9
+[sha1-prefix files]  prefix=04  items=11  pages=2  final_offset=11
+[sha1-prefix files]  prefix=05  items=8  pages=1  final_offset=8
+[sha1-prefix files]  prefix=06  items=10  pages=1  final_offset=10
+[sha1-prefix files]  prefix=07  items=14  pages=2  final_offset=14
+[sha1-prefix files]  prefix=08  items=9  pages=1  final_offset=9
+[sha1-prefix files]  prefix=09  items=7  pages=1  final_offset=7
+[sha1-prefix files]  prefix=0a  items=11  pages=2  final_offset=11
+[sha1-prefix files]  prefix=0b  items=8  pages=1  final_offset=8
+[sha1-prefix files]  prefix=0c  items=10  pages=1  final_offset=10
+[sha1-prefix files]  prefix=0d  items=6  pages=1  final_offset=6
+[sha1-prefix files]  prefix=0e  items=9  pages=1  final_offset=9
+[sha1-prefix files]  prefix=0f  items=7  pages=1  final_offset=7
+[sha1-prefix files]  SUMMARY  items=165  pages=22  final_offset=165  prefix_range=00..ff  errors=2
+--- folders ---
+[folders]  repo=npmjs-remote-cache  items=45  pages=5  final_offset=45
+[folders]  SUMMARY  items=45  pages=5  final_offset=45
+--- elapsed: 2m 15s  errors: 2 ---

@@ -1,0 +1,13 @@
+jf compare authority-add psazuse https://psazuse.jfrog.io/artifactory/
+jf compare credentials-add psazuse --cli-profile=psazuse --discovery=artifactory_aql
+jf compare list psazuse --repos=npmjs-remote-cache --aql-style=sha1-prefix --aql-page-size=5 --folder-parallel=16 --include-remote-cache --sha1-resume=00:10,01:10,f1:10,f2:10,57:0,8d:0
+jf compare authority-add psazuse1 https://psazuse.jfrog.io/artifactory/
+jf compare credentials-add psazuse1 --cli-profile=psazuse1 --discovery=artifactory_aql
+jf compare list psazuse1 --repos=sv-npmjs-remote-cache-copy1 --aql-style=sha1-prefix --aql-page-size=5 --folder-parallel=16 --include-remote-cache --sha1-resume=00:10,01:10,f1:10,f2:10,57:0,8d:0
+jf compare sync-add psazuse npmjs-remote-cache psazuse1 sv-npmjs-remote-cache-copy1 other
+jf compare report --jsonl reconcile_phase1_consolidate
+jf compare report --jsonl properties_reconcile_phase1_consolidate
+jf compare report --jsonl reconcile_phase2_sync
+jf compare report --jsonl reconcile_phase2_sync_delayed
+jf compare report --jsonl reconcile_stats_actionable
+jf compare report --jsonl properties_reconcile_phase2_sync_folders
