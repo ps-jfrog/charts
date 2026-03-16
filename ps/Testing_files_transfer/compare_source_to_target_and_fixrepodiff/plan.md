@@ -663,6 +663,130 @@ errors:   0
 
   **Implemented:** Added `--collect-stats-for-uris <file>` flag and `COMPARE_COLLECT_STATS_FOR_URIS` env variable to both `sync-target-from-source.sh` and `compare-and-reconcile.sh`. In `compare-and-reconcile.sh`: (1) skip `init --clean` when the flag is set (preserves existing `comparison.db`); (2) skip the basic artifact crawl for both SH and Cloud authorities (data is already in DB from Pass 1); (3) add a new targeted collection section that calls `jf compare list <authority> --collect-stats-for-uris=<file>` for source and target (with `--repos` and `--include-remote-cache` when set); (4) the `_should_skip_authority` helper was extended to support `--sha1-resume-authority` with `--collect-stats-for-uris` (not just `--sha1-resume`). The file is validated to exist before use. Updated `README.md` options table with the new flag.
 
+- [x] **T31** Fix `sync-with-targeted-stats.sh`: move URI extraction before Run 03/04 to prevent `reconcile_phase2_sync` from being emptied.
+
+  **Scope: script-only fix — no plugin changes needed.** Only `sync-with-targeted-stats.sh` needs to change.
+
+  **Bug:** The "Run 03/04" step calls `sync-target-from-source.sh --run-only`, which runs not just the b4_upload scripts (Step 3) but also the after-upload compare (Step 4). Step 4 re-crawls the target with `--sha1-resume` and `--collect-stats --collect-properties`. Since Run 03/04 just copied the missing artifacts to the target, the target now has all the files — `reconcile_phase2_sync` drops to 0 rows. The subsequent URI extraction query (`SELECT DISTINCT path FROM reconcile_phase2_sync UNION ...`) returns nothing, `uris_to_collect.txt` is empty, and Pass 2 is either skipped or generates empty scripts (including `06_to_sync_folder_props.sh`).
+
+  **Root cause confirmed via test data:** crawl-audit logs show the 2nd crawl (from Step 4 during Run 03/04) ran with `collect_stats: true, collect_props: true` in RESUME mode, updating the DB so that source and target matched — zeroing out `reconcile_phase2_sync` before URI extraction.
+
+  **Fix:** In `sync-with-targeted-stats.sh`, move the URI extraction step to immediately after Pass 1, before Run 03/04. The `reconcile_phase2_sync` view is populated by Pass 1 and has the correct data at that point. The reordered flow:
+
+  ```
+  Pass 1 (generate)  →  Extract URIs  →  Run 03/04  →  Pass 2 (targeted stats)  →  Run 05–09
+  ```
+
+  Run 03/04 must still happen before Pass 2 so that target folders exist when the targeted collection queries Artifactory for folder properties. Extracting URIs before Run 03/04 is safe because the URIs represent files pending sync (populated by Pass 1), and they don't change between Pass 1 and Run 03/04.
+
+- [x] **T32** Skip redundant full crawls in `sync-with-targeted-stats.sh` when the delta is already known.
+
+  **Scope: script-only fix — no plugin changes needed.** Changes to `sync-target-from-source.sh` and `sync-with-targeted-stats.sh`.
+
+  **Problem:** When the user already has the delta in `03_to_sync.sh` / `04_to_sync_delayed.sh` and a populated `comparison.db` (e.g. copied from a previous run), `sync-with-targeted-stats.sh` still triggers **6 redundant full crawls** in addition to the 2 targeted collection crawls that are actually needed:
+
+  | # | Phase | What | `init --clean` | Needed? |
+  |---|-------|------|----------------|---------|
+  | 1 | Pass 1 source | Full sha1-prefix (all 256 prefixes) | YES | **NO** — delta already in DB |
+  | 2 | Pass 1 target | Full sha1-prefix | YES | **NO** |
+  | 3 | Run 03/04 → Step 4 source | Full sha1-prefix + stats + props | YES | **NO** — wipes DB! |
+  | 4 | Run 03/04 → Step 4 target | Full sha1-prefix + stats + props | YES | **NO** — wipes DB! |
+  | 5 | Pass 2 source | Targeted (e.g. 49 URIs) | no | **YES** |
+  | 6 | Pass 2 target | Targeted (e.g. 49 URIs) | no | **YES** |
+  | 7 | Run 05-09 → Step 4 source | Full sha1-prefix + stats + props | YES | **NO** — wipes DB again! |
+  | 8 | Run 05-09 → Step 4 target | Full sha1-prefix + stats + props | YES | **NO** |
+
+  For large repos (millions of artifacts), crawls #1-4 and #7-8 each take hours — making the "quick targeted sync" take as long as a full sync.
+
+  **Root cause:** Two separate issues:
+
+  1. **Pass 1 always does a full crawl.** When the user already has a `comparison.db` with the correct delta, Pass 1 is unnecessary — the URI extraction can run directly against the existing DB.
+
+  2. **`--run-only` always executes Step 4 (after-upload compare).** Both "Run 03/04" and "Run 05-09" invoke `sync-target-from-source.sh --run-only`, which runs Step 4 (the after-upload compare with `init --clean`). Step 4 is useful in the standalone sync workflow to regenerate scripts 07-09, but inside the orchestrator it destroys the `comparison.db` that Pass 2 needs.
+
+  **Fix:**
+
+  1. Add `--skip-compare` (or `--skip-step2-step4`) flag to `sync-target-from-source.sh` that skips both Step 2 (before-upload compare) and Step 4 (after-upload compare) during a `--run-only` invocation. This allows running the generated scripts without triggering any crawls.
+
+  2. Add `--skip-pass1` flag to `sync-with-targeted-stats.sh` that skips the Pass 1 full crawl entirely. When set, the script assumes `comparison.db` already has the delta and jumps directly to URI extraction → Run 03/04 → Pass 2 → Run 05-09.
+
+  3. In `sync-with-targeted-stats.sh`, pass `--skip-compare` (or equivalent) to the "Run 03/04" and "Run 05-09" invocations so they only execute scripts without re-crawling.
+
+  **Expected workflow (pre-existing delta):**
+
+  ```bash
+  # User already has comparison.db + 03_to_sync.sh + 04_to_sync_delayed.sh
+  # from a prior run or copied from another directory.
+  bash sync-with-targeted-stats.sh \
+    --config <config> \
+    --include-remote-cache --aql-style sha1-prefix \
+    --aql-page-size 5000 --folder-parallel 16 \
+    --skip-pass1
+  ```
+
+  This would:
+  1. Skip Pass 1 (no full crawl)
+  2. Extract URIs from existing `comparison.db`
+  3. Run 03/04 without Step 4 (no after-upload re-crawl)
+  4. Pass 2: targeted stats/properties collection (the only crawl)
+  5. Run 05-09 without Step 4 (no after-upload re-crawl)
+
+  **Separate plugin issue:** The Pass 2 targeted file collection failed with `AQL query is too long; please reduce the query length to less than 6000 chars` for 49 Docker URIs (long paths like `sv-docker-local/brave-dolphin/v503.1.3_3/sha256__d8ad8cd72600f46cc068e16c39046ebc76526e41051f43a8c249884b200936c0`). The current `uriBatchSize = 50` in the plugin is too large for Docker repos with long paths. This is a plugin-side fix — see Task 37 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md`.
+
+  **Test data:** `test/one-shot-targeted-stats-for-remianing-tags/` — crawl audit logs show 8 crawl invocations (4 per authority) when only 2 (targeted) were needed.
+
+  **Implemented:** Two new flags:
+
+  1. `--skip-compare` in `sync-target-from-source.sh`: Skips Step 2 (before-upload compare) and Step 4 (after-upload compare). When combined with `--run-only`, only the script execution steps (3 and 5) run — no crawls, no `init --clean`, no DB wipes. Step 2 skip also triggers when `--run-only` is active (existing behavior preserved). Step 4 skip is new and prevents the destructive re-crawl that was wiping `comparison.db`.
+
+  2. `--skip-pass1` in `sync-with-targeted-stats.sh`: Skips the Pass 1 full artifact crawl entirely. The script jumps directly to URI extraction from the existing `comparison.db`. Use when the user already has `comparison.db` + generated scripts from a prior run or copy.
+
+  Additionally, `sync-with-targeted-stats.sh` now always passes `--skip-compare` to the "Run 03/04" and "Run 05-09" invocations. This eliminates the redundant Step 4 crawls that were triggered by `--run-only` inside the orchestrator. With `--skip-pass1`, the workflow reduces from 8 crawl invocations to 2 (targeted collection only).
+
+- [x] **T33** Fix `sync-with-targeted-stats.sh`: generate after-upload scripts 07–09 (download stats, file properties, folder stats as properties).
+
+  **Scope: script-only fix — no plugin changes needed.** Changes to `sync-target-from-source.sh`, `sync-with-targeted-stats.sh` comments, and `04-README-targeted-stats-collection.md`.
+
+  **Problem:** The targeted stats orchestrator (`sync-with-targeted-stats.sh`) never generates scripts 07–09 (`07_to_sync_download_stats.sh`, `08_to_sync_props.sh`, `09_to_sync_folder_stats_as_properties.sh`). These scripts are produced by `compare-and-reconcile.sh --after-upload`, which generates reconciliation views `reconcile_download_stats`, `properties_reconcile_phase2_sync`, and `reconcile_folder_stats`. However:
+
+  1. **`--generate-only` exits before Step 4.** Both Pass 1 and Pass 2 call `sync-target-from-source.sh --generate-only`, which runs Step 2 (`--b4upload` → scripts 01–06 in `b4_upload/`) and exits at line 437 — Step 4 (`--after-upload` → scripts 07–09 in `after_upload/`) never runs.
+
+  2. **Run steps use `--skip-compare`.** Both "Run 03/04" and "Run 05-09" pass `--skip-compare`, which explicitly skips Step 4. Step 5 tries to execute scripts in `after_upload/` but they don't exist.
+
+  The comment on line 9 of `sync-with-targeted-stats.sh` says "Pass 2: generate 05–09" but only 05–06 are actually generated.
+
+  **Evidence:** `test/one-shot-targeted-stats-with-skip-pass1/after_upload/` is empty (no 07/08/09), while `test/one-shot-test/after_upload/` (full sync) has 07–09. The command audit log for the targeted run shows only b4upload views (`reconcile_phase2_sync`, `reconcile_stats_actionable`, `properties_reconcile_phase2_sync_folders`) — no after-upload views (`reconcile_download_stats`, `properties_reconcile_phase2_sync`, `reconcile_folder_stats`).
+
+  **Fix:** In `sync-target-from-source.sh`, when `--generate-only` is used with `--collect-stats-for-uris`, also run Step 4 (after-upload compare) before exiting. This is safe because `--collect-stats-for-uris` always skips `init --clean`, preserving `comparison.db`. The targeted collection runs again for the after-upload compare (redundant but fast for a small URI list), and the after-upload reconciliation views are queried to generate scripts 07–09 in `after_upload/`.
+
+  This requires no changes to `sync-with-targeted-stats.sh` flow — the Run 05-09 step already executes `after_upload/` scripts via Step 5 in `sync-target-from-source.sh`; they were simply missing until now.
+
+  **Test data:** `test/one-shot-targeted-stats-with-skip-pass1/` — after fix, `after_upload/` should contain 07–09.
+
+- [ ] **T34** Script-side workaround: filter after-upload scripts 07–09 to only include targeted delta URIs.
+
+  **Scope: script-only workaround — pending plugin Task 38.** Changes to `sync-target-from-source.sh` (or `sync-with-targeted-stats.sh`).
+
+  **Problem:** After T33 generates after-upload scripts 07–09, the `reconcile_folder_stats` view (script 09) returns folder stats for **all** folders in `comparison.db`, not just the delta. For example, `09_to_sync_folder_stats_as_properties.sh` contains commands for both `clever-phoenix` (the delta, 14 lines) and `merry-griffin` (already synced, 14 lines), even though `uris_to_collect.txt` only contains `clever-phoenix` URIs. The same issue may affect scripts 07 and 08 (`reconcile_download_stats`, `properties_reconcile_phase2_sync`).
+
+  The before-upload views (`reconcile_stats_actionable` → script 05, `properties_reconcile_phase2_sync_folders` → script 06) are correctly scoped to the sync delta because they join with `reconcile_phase2_sync`. The after-upload views lack this join.
+
+  **Root cause:** The plugin's after-upload views are not scoped to the targeted URIs — see plugin Task 38 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md`.
+
+  **Workaround:** After generating scripts 07–09 in the `--generate-only` block (T33 code in `sync-target-from-source.sh`), filter each script to only include commands whose paths match folders derived from `$COMPARE_COLLECT_STATS_FOR_URIS`. Steps:
+
+  1. Read the URIs file and derive all unique parent folder paths (e.g. `/clever-phoenix/v3.1.3_0/sha256__abc...` → `/clever-phoenix/v3.1.3_0/`, `/clever-phoenix/`, `/`).
+  2. For each after-upload script (07, 08, 09), keep only lines that reference a path matching a derived folder.
+  3. Write the filtered script back.
+
+  This is safe because the URIs file is always available when `--collect-stats-for-uris` is set. The filter should only apply when `COMPARE_COLLECT_STATS_FOR_URIS` is non-empty (full sync should not be filtered).
+
+  **Impact of not fixing:** Re-applying `sync.*` properties is idempotent — no data corruption. But for large repos with millions of previously-synced folders, script 09 would contain millions of redundant `jf rt sp` commands.
+
+  **Superseded by:** Plugin Task 38 — once the plugin scopes the views, this script-side filter becomes unnecessary but harmless.
+
+  **Evidence:** `test/one-shot-targeted-stats-with-skip-pass1/after_upload/09_to_sync_folder_stats_as_properties.sh` — 28 lines (14 `clever-phoenix` + 14 `merry-griffin`); expected: 14 lines (only `clever-phoenix`).
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos

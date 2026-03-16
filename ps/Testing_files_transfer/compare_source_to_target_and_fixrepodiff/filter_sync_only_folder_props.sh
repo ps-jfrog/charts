@@ -52,6 +52,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$INPUT"
 
 kept=$(wc -l < "$OUTPUT" | tr -d ' ')
-total=$(grep -c . "$INPUT" 2>/dev/null || echo 0)
+total=$(wc -l < "$INPUT" | tr -d ' ')
 skipped=$((total - kept))
 echo "Filtered $INPUT: $total total, $kept kept (non-sync.* props), $skipped excluded (sync.*-only)"

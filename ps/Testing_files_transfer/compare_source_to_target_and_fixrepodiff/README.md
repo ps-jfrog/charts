@@ -8,6 +8,7 @@
 | 1 | [01-QUICKSTART.md](01-QUICKSTART.md) | Step-by-step walkthrough: setup, first run, inspecting results |
 | 2 | [02-identify_source_target_mismatch.md](02-identify_source_target_mismatch.md) | Post-sync verification and debugging: queries to find missing/mismatched artifacts |
 | 3 | [03-README-troubleshooting-crawl-errors.md](03-README-troubleshooting-crawl-errors.md) | Crawl error recovery: diagnosing AQL failures, using `--sha1-resume` |
+| 4 | [04-README-targeted-stats-collection.md](04-README-targeted-stats-collection.md) | Targeted stats/properties collection: `--collect-stats-for-uris` workflow (avoids full repo re-crawl) |
 
 **Helper references:** [README-compare-and-reconcile.md](README-compare-and-reconcile.md) | [README-verify-comparison-db.md](README-verify-comparison-db.md) | [README-retarget-sync-scripts.md](README-retarget-sync-scripts.md) | [README-group_sync_by_sha1.md](README-group_sync_by_sha1.md) | [README-convert_dl_upload_to_rt_cp.md](README-convert_dl_upload_to_rt_cp.md) | [README-runcommand_in_parallel_from_file.md](README-runcommand_in_parallel_from_file.md)
 
@@ -452,6 +453,68 @@ errors:   2
 - **Diffing two runs** — the sorted order is deterministic regardless of worker parallelism.
 
 For a full multi-repo example, see the [troubleshooting guide](03-README-troubleshooting-crawl-errors.md).
+
+---
+
+## Targeted stats/properties collection (avoiding full repo re-crawl)
+
+For large repositories (e.g. 7.5M artifacts per authority), `--collect-stats --collect-properties` triggers a full AQL re-crawl that takes ~5 hours per authority. When only ~85–500 artifacts were synced via `03_to_sync.sh` / `04_to_sync_delayed.sh`, re-crawling the entire repo just to collect stats and properties for those files is extremely wasteful.
+
+The `--collect-stats-for-uris <file>` flag solves this by collecting stats and properties **only** for the specified file URIs and their derived parent folders. This reduces a 10+ hour two-authority crawl to minutes.
+
+**Two-pass workflow (generate → run → generate → run):**
+
+1. **Pass 1:** Generate sync scripts 03/04 without stats/properties (fast):
+
+```bash
+bash sync-target-from-source.sh \
+  --config <config> --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16
+```
+
+2. **Run 03/04:** Sync the missing artifacts to the target:
+
+```bash
+bash sync-target-from-source.sh --config <config> --run-only --skip-consolidation
+```
+
+3. **Extract URIs** from `comparison.db`:
+
+```bash
+jf compare query --csv --header=false \
+  "SELECT DISTINCT path FROM reconcile_phase2_sync
+   UNION
+   SELECT DISTINCT path FROM reconcile_phase2_sync_delayed" \
+  > "$RECONCILE_BASE_DIR/uris_to_collect.txt"
+```
+
+4. **Pass 2:** Collect targeted stats/properties and generate scripts 05–09:
+
+```bash
+bash sync-target-from-source.sh \
+  --config <config> --generate-only \
+  --include-remote-cache \
+  --collect-stats-for-uris "$RECONCILE_BASE_DIR/uris_to_collect.txt"
+```
+
+5. **Run 05–09:** Apply stats, properties, and folder metadata:
+
+```bash
+bash sync-target-from-source.sh --config <config> --run-only --skip-consolidation
+```
+
+**One-command alternative:** `sync-with-targeted-stats.sh` runs all five steps in a single invocation:
+
+```bash
+bash sync-with-targeted-stats.sh \
+  --config <config> \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+```
+
+For the full workflow explanation, resume examples with `--sha1-resume`, and `--sha1-resume-authority` scoping, see [04-README-targeted-stats-collection.md](04-README-targeted-stats-collection.md).
 
 ---
 

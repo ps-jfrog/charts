@@ -56,6 +56,7 @@ SKIP_COLLECT_STATS_PROPERTIES=0
 SHA1_RESUME=""
 SHA1_RESUME_AUTHORITY=""
 COLLECT_STATS_FOR_URIS=""
+SKIP_COMPARE=0
 VERIFICATION_CSV=""
 VERIFICATION_CSV_ENABLED=0
 VERIFICATION_NO_LIMIT=0
@@ -115,6 +116,11 @@ OPTIONS:
                         Skips 'init --clean' to preserve existing comparison.db. Use after a
                         --generate-only pass to collect targeted stats for scripts 05–09.
                         Also settable via env COMPARE_COLLECT_STATS_FOR_URIS.
+  --skip-compare        Skip the compare-and-reconcile crawl in both Step 2 (before-upload) and
+                        Step 4 (after-upload). Only the script execution steps (3 and 5) run.
+                        Designed for use with --run-only when comparison.db is already populated
+                        (e.g. by sync-with-targeted-stats.sh) and re-crawling would be wasteful
+                        or destructive (Step 4 runs init --clean which wipes the DB).
   --verification-csv [dir]  Write CSV report files during Step 6 verification (one file per
                         section per repo). If <dir> is omitted, defaults to RECONCILE_BASE_DIR.
                         Passed to verify-comparison-db.sh --csv.
@@ -210,6 +216,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-collect-stats-properties)
       SKIP_COLLECT_STATS_PROPERTIES=1
+      shift
+      ;;
+    --skip-compare)
+      SKIP_COMPARE=1
       shift
       ;;
     --verification-csv)
@@ -379,8 +389,11 @@ run_verification() {
 
 # Step 2: Compare and reconcile (before-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports are created there
 STEP2_START=$(date +%s)
-if [[ "$RUN_ONLY" -eq 1 ]]; then
-  echo "=== Step 2: Skipped (--run-only) ==="
+if [[ "$RUN_ONLY" -eq 1 ]] || [[ "$SKIP_COMPARE" -eq 1 ]]; then
+  _skip_reason=""
+  [[ "$RUN_ONLY" -eq 1 ]] && _skip_reason="--run-only"
+  [[ "$SKIP_COMPARE" -eq 1 ]] && _skip_reason="${_skip_reason:+$_skip_reason }--skip-compare"
+  echo "=== Step 2: Skipped ($_skip_reason) ==="
   if [[ ! -d "$B4_DIR" ]]; then
     echo "Error: Before-upload output directory not found: $B4_DIR" >&2
     echo "  Run with --generate-only first to create it." >&2
@@ -409,6 +422,27 @@ if [[ "$GENERATE_ONLY" -eq 1 ]]; then
     lines=$(wc -l < "$f" | tr -d ' ')
     echo "  $local_name  ($lines lines)"
   done
+  # When targeted stats are active, also run Step 4 (after-upload compare) to
+  # generate scripts 07-09 in after_upload/. Safe because --collect-stats-for-uris
+  # skips init --clean, preserving comparison.db.
+  if [[ -n "${COMPARE_COLLECT_STATS_FOR_URIS:-}" ]]; then
+    STEP4_GEN_START=$(date +%s)
+    echo ""
+    echo "=== Step 4: Generate after-upload scripts (07-09) with targeted stats ==="
+    export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
+    STEP4_ARGS=(--after-upload --reconcile --target-only)
+    ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP4_ARGS[@]}" )
+    echo "[timing] Step 4 (after-upload generate) completed in $(format_elapsed $STEP4_GEN_START)"
+    echo ""
+    echo "=== --generate-only: after-upload scripts generated in $AFTER_DIR ==="
+    for f in "$AFTER_DIR"/*.sh; do
+      [[ -f "$f" ]] || continue
+      local_name="$(basename "$f")"
+      lines=$(wc -l < "$f" | tr -d ' ')
+      echo "  $local_name  ($lines lines)"
+    done
+  fi
+
   crawl_logs=("$RECONCILE_BASE_DIR"/crawl-audit-*.log)
   if [[ -e "${crawl_logs[0]}" ]]; then
     echo "Crawl audit logs:"
@@ -492,15 +526,19 @@ echo "[timing] Step 3 (before-upload reconciliation) completed in $(format_elaps
 
 # Step 4: Compare and reconcile (after-upload) — run from RECONCILE_BASE_DIR so comparison.db and reports stay there
 STEP4_START=$(date +%s)
-echo "=== Step 4: Compare and reconcile (after-upload) ==="
-export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
-STEP4_ARGS=(--after-upload --reconcile --target-only)
-if [[ -n "${COMPARE_COLLECT_STATS_FOR_URIS:-}" ]]; then
-  : # --collect-stats-for-uris replaces --collect-stats-properties; targeted collection runs in compare-and-reconcile.sh
-elif [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]]; then
-  STEP4_ARGS+=(--collect-stats-properties)
+if [[ "$SKIP_COMPARE" -eq 1 ]]; then
+  echo "=== Step 4: Skipped (--skip-compare) ==="
+else
+  echo "=== Step 4: Compare and reconcile (after-upload) ==="
+  export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
+  STEP4_ARGS=(--after-upload --reconcile --target-only)
+  if [[ -n "${COMPARE_COLLECT_STATS_FOR_URIS:-}" ]]; then
+    : # --collect-stats-for-uris replaces --collect-stats-properties; targeted collection runs in compare-and-reconcile.sh
+  elif [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]]; then
+    STEP4_ARGS+=(--collect-stats-properties)
+  fi
+  ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP4_ARGS[@]}" )
 fi
-( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP4_ARGS[@]}" )
 echo "[timing] Step 4 (after-upload compare) completed in $(format_elapsed $STEP4_START)"
 
 # Step 5: After-upload reconciliation scripts
