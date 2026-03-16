@@ -55,6 +55,7 @@ RUN_FOLDER_STATS=0
 SKIP_COLLECT_STATS_PROPERTIES=0
 SHA1_RESUME=""
 SHA1_RESUME_AUTHORITY=""
+COLLECT_STATS_FOR_URIS=""
 VERIFICATION_CSV=""
 VERIFICATION_CSV_ENABLED=0
 VERIFICATION_NO_LIMIT=0
@@ -108,6 +109,12 @@ OPTIONS:
                         re-crawled; the other is skipped (its data is already in comparison.db).
                         When omitted, --sha1-resume applies to all authorities. Also settable
                         via env COMPARE_SHA1_RESUME_AUTHORITY.
+  --collect-stats-for-uris <file>
+                        Collect stats and properties only for the URIs listed in <file> (one per
+                        line) and their derived parent folders, instead of a full repo re-crawl.
+                        Skips 'init --clean' to preserve existing comparison.db. Use after a
+                        --generate-only pass to collect targeted stats for scripts 05–09.
+                        Also settable via env COMPARE_COLLECT_STATS_FOR_URIS.
   --verification-csv [dir]  Write CSV report files during Step 6 verification (one file per
                         section per repo). If <dir> is omitted, defaults to RECONCILE_BASE_DIR.
                         Passed to verify-comparison-db.sh --csv.
@@ -182,6 +189,11 @@ while [[ $# -gt 0 ]]; do
     --sha1-resume-authority)
       [[ $# -lt 2 ]] && { echo "Error: --sha1-resume-authority requires an authority id." >&2; exit 1; }
       SHA1_RESUME_AUTHORITY="$2"
+      shift 2
+      ;;
+    --collect-stats-for-uris)
+      [[ $# -lt 2 ]] && { echo "Error: --collect-stats-for-uris requires a file path." >&2; exit 1; }
+      COLLECT_STATS_FOR_URIS="$2"
       shift 2
       ;;
     --generate-only)
@@ -261,6 +273,9 @@ fi
 
 # SHA1 resume authority: CLI flag overrides env; env from config is also respected
 [[ -n "$SHA1_RESUME_AUTHORITY" ]] && export COMPARE_SHA1_RESUME_AUTHORITY="$SHA1_RESUME_AUTHORITY"
+
+# Collect stats for URIs: CLI flag overrides env; env from config is also respected
+[[ -n "$COLLECT_STATS_FOR_URIS" ]] && export COMPARE_COLLECT_STATS_FOR_URIS="$COLLECT_STATS_FOR_URIS"
 
 # Output dirs: respect RECONCILE_BASE_DIR from config or environment
 RECONCILE_BASE_DIR="${RECONCILE_BASE_DIR:-$SCRIPT_DIR}"
@@ -375,7 +390,11 @@ else
   echo "=== Step 2: Compare and reconcile (before-upload) ==="
   export RECONCILE_OUTPUT_DIR="$B4_DIR"
   STEP2_ARGS=(--b4upload --reconcile --target-only)
-  [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]] && STEP2_ARGS+=(--collect-stats-properties)
+  if [[ -n "${COMPARE_COLLECT_STATS_FOR_URIS:-}" ]]; then
+    : # --collect-stats-for-uris replaces --collect-stats-properties; targeted collection runs in compare-and-reconcile.sh
+  elif [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]]; then
+    STEP2_ARGS+=(--collect-stats-properties)
+  fi
   ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP2_ARGS[@]}" )
 fi
 echo "[timing] Step 2 (before-upload compare) completed in $(format_elapsed $STEP2_START)"
@@ -476,7 +495,11 @@ STEP4_START=$(date +%s)
 echo "=== Step 4: Compare and reconcile (after-upload) ==="
 export RECONCILE_OUTPUT_DIR="$AFTER_DIR"
 STEP4_ARGS=(--after-upload --reconcile --target-only)
-[[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]] && STEP4_ARGS+=(--collect-stats-properties)
+if [[ -n "${COMPARE_COLLECT_STATS_FOR_URIS:-}" ]]; then
+  : # --collect-stats-for-uris replaces --collect-stats-properties; targeted collection runs in compare-and-reconcile.sh
+elif [[ "$SKIP_COLLECT_STATS_PROPERTIES" -eq 0 ]]; then
+  STEP4_ARGS+=(--collect-stats-properties)
+fi
 ( cd "$RECONCILE_BASE_DIR" && bash "$COMPARE_SCRIPT" "${STEP4_ARGS[@]}" )
 echo "[timing] Step 4 (after-upload compare) completed in $(format_elapsed $STEP4_START)"
 

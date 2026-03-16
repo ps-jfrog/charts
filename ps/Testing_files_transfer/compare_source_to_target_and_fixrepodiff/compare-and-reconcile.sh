@@ -76,6 +76,11 @@ OPTIONS:
                                is re-crawled; the other is skipped entirely (its data is already in
                                comparison.db). When omitted, --sha1-resume applies to all authorities.
                                Also settable via env COMPARE_SHA1_RESUME_AUTHORITY.
+  --collect-stats-for-uris <file>
+                               Collect stats and properties only for the URIs listed in <file> (one
+                               per line) and their derived parent folders, instead of a full repo
+                               re-crawl. Skips 'init --clean' to preserve existing comparison.db.
+                               Also settable via env COMPARE_COLLECT_STATS_FOR_URIS.
   -h, --help                   Show this help.
 
 ENVIRONMENT (same as compare-artifacts.sh):
@@ -100,6 +105,7 @@ RECONCILIATION:
   COMPARE_INCLUDE_REMOTE_CACHE=1  Same as --include-remote-cache.
   COMPARE_SHA1_RESUME=<pairs>  Same as --sha1-resume (e.g. f2:40000,f3:40000).
   COMPARE_SHA1_RESUME_AUTHORITY=<id>  Same as --sha1-resume-authority (e.g. psazuse1).
+  COMPARE_COLLECT_STATS_FOR_URIS=<file>  Same as --collect-stats-for-uris (e.g. /tmp/uris_to_collect.txt).
 
 Reconciliation applies to specific Artifactory repositories when ARTIFACTORY_REPOS (or
 CLOUD_ARTIFACTORY_REPOS / SH_ARTIFACTORY_REPOS for the target) is set; otherwise all repositories.
@@ -117,6 +123,7 @@ FOLDER_PARALLEL="${COMPARE_FOLDER_PARALLEL:-}"
 INCLUDE_REMOTE_CACHE="${COMPARE_INCLUDE_REMOTE_CACHE:-0}"
 SHA1_RESUME="${COMPARE_SHA1_RESUME:-}"
 SHA1_RESUME_AUTHORITY="${COMPARE_SHA1_RESUME_AUTHORITY:-}"
+COLLECT_STATS_FOR_URIS="${COMPARE_COLLECT_STATS_FOR_URIS:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --b4upload)
@@ -168,6 +175,11 @@ while [[ $# -gt 0 ]]; do
             SHA1_RESUME_AUTHORITY="$2"
             shift 2
             ;;
+        --collect-stats-for-uris)
+            [[ $# -lt 2 ]] && { echo "Error: --collect-stats-for-uris requires a file path." >&2; exit 1; }
+            COLLECT_STATS_FOR_URIS="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -199,6 +211,10 @@ INCLUDE_REMOTE_CACHE_FLAG=""
 # Build sha1-resume flag (empty when not set → full crawl)
 SHA1_RESUME_FLAG=""
 [[ -n "$SHA1_RESUME" ]] && SHA1_RESUME_FLAG="--sha1-resume=$SHA1_RESUME"
+
+# Build collect-stats-for-uris flag (empty when not set → use normal --collect-stats --collect-properties)
+COLLECT_STATS_FOR_URIS_FLAG=""
+[[ -n "$COLLECT_STATS_FOR_URIS" ]] && COLLECT_STATS_FOR_URIS_FLAG="--collect-stats-for-uris=$COLLECT_STATS_FOR_URIS"
 
 # Require mode (--b4upload or --after-upload)
 if [ -z "$RECONCILE_MODE" ]; then
@@ -320,6 +336,7 @@ echo "Mode: $RECONCILE_MODE | Collect stats/properties: $COLLECT_STATS_PROPERTIE
 [[ "$INCLUDE_REMOTE_CACHE" == "1" ]] && echo "Include remote-cache repos: yes"
 [ -n "$SHA1_RESUME" ] && echo "SHA1 resume: $SHA1_RESUME"
 [ -n "$SHA1_RESUME_AUTHORITY" ] && echo "SHA1 resume authority: $SHA1_RESUME_AUTHORITY"
+[ -n "$COLLECT_STATS_FOR_URIS" ] && echo "Collect stats for URIs: $COLLECT_STATS_FOR_URIS"
 [ -n "$TARGET_REPOS" ] && echo "Target repos: $TARGET_REPOS"
 echo ""
 
@@ -347,7 +364,11 @@ _show_crawl_audit_log() {
 
 _should_skip_authority() {
   local authority="$1"
-  [[ -n "$SHA1_RESUME" ]] && [[ -n "$SHA1_RESUME_AUTHORITY" ]] && [[ "$SHA1_RESUME_AUTHORITY" != "$authority" ]]
+  if [[ -n "$SHA1_RESUME_AUTHORITY" ]] && [[ "$SHA1_RESUME_AUTHORITY" != "$authority" ]]; then
+    [[ -n "$SHA1_RESUME" ]] && return 0
+    [[ -n "$COLLECT_STATS_FOR_URIS" ]] && return 0
+  fi
+  return 1
 }
 
 _resume_flag_for() {
@@ -359,7 +380,7 @@ _resume_flag_for() {
   fi
 }
 
-if [[ -n "$SHA1_RESUME" ]]; then
+if [[ -n "$SHA1_RESUME" ]] || [[ -n "$COLLECT_STATS_FOR_URIS" ]]; then
     echo "=== Resume mode: skipping 'init --clean' to preserve existing comparison.db ==="
 else
     _audit_run $COMMAND_NAME init --clean
@@ -394,7 +415,7 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_SH" == "1" ]; then
     echo "=== Setting up Artifactory SH ==="
     _audit_run $COMMAND_NAME authority-add "$SH_ARTIFACTORY_AUTHORITY" "$SH_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$SH_ARTIFACTORY_AUTHORITY" --cli-profile="$SH_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
-    if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
+    if [ "$COLLECT_STATS_PROPERTIES" != "1" ] && [ -z "$COLLECT_STATS_FOR_URIS" ]; then
         if _should_skip_authority "$SH_ARTIFACTORY_AUTHORITY"; then
             echo "=== Skipping SH ($SH_ARTIFACTORY_AUTHORITY) — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
         else
@@ -416,7 +437,7 @@ if [ "$COMPARE_TARGET_ARTIFACTORY_CLOUD" == "1" ]; then
     echo "=== Setting up Artifactory Cloud ==="
     _audit_run $COMMAND_NAME authority-add "$CLOUD_ARTIFACTORY_AUTHORITY" "$CLOUD_ARTIFACTORY_BASE_URL"
     _audit_run $COMMAND_NAME credentials-add "$CLOUD_ARTIFACTORY_AUTHORITY" --cli-profile="$CLOUD_ARTIFACTORY_AUTHORITY" --discovery="$ARTIFACTORY_DISCOVERY_METHOD"
-    if [ "$COLLECT_STATS_PROPERTIES" != "1" ]; then
+    if [ "$COLLECT_STATS_PROPERTIES" != "1" ] && [ -z "$COLLECT_STATS_FOR_URIS" ]; then
         if _should_skip_authority "$CLOUD_ARTIFACTORY_AUTHORITY"; then
             echo "=== Skipping Cloud ($CLOUD_ARTIFACTORY_AUTHORITY) — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
         else
@@ -438,7 +459,7 @@ fi
 # Collect on target; in Case a (SH->Cloud) also collect properties on source (SH)
 # so the plugin can align source=SH, target=Cloud and emit property sync commands (04, 06).
 # ----------------------------------------------------------------------------
-if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
+if [ "$COLLECT_STATS_PROPERTIES" == "1" ] && [ -z "$COLLECT_STATS_FOR_URIS" ]; then
     if [ "$ARTIFACTORY_DISCOVERY_METHOD" != "artifactory_aql" ]; then
         echo "Note: --collect-stats and --collect-properties are only supported with ARTIFACTORY_DISCOVERY_METHOD=artifactory_aql. Skipping."
     else
@@ -472,6 +493,44 @@ if [ "$COLLECT_STATS_PROPERTIES" == "1" ]; then
         fi
         echo ""
     fi
+fi
+
+# ----------------------------------------------------------------------------
+# Optional: targeted stats/properties collection for specific URIs
+# When --collect-stats-for-uris is set, collect stats and properties only for
+# the listed URIs (and their derived parent folders) instead of a full re-crawl.
+# ----------------------------------------------------------------------------
+if [ -n "$COLLECT_STATS_FOR_URIS" ]; then
+    if [ ! -f "$COLLECT_STATS_FOR_URIS" ]; then
+        echo "Error: --collect-stats-for-uris file not found: $COLLECT_STATS_FOR_URIS" >&2
+        exit 1
+    fi
+    if [ "$COMPARISON_SCENARIO" == "artifactory-sh-to-cloud" ]; then
+        if _should_skip_authority "$SOURCE_AUTHORITY"; then
+            echo "=== Skipping source ($SOURCE_AUTHORITY) targeted stats — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
+        else
+            echo "=== Collecting targeted stats/properties on source ($SOURCE_AUTHORITY) for URIs in $COLLECT_STATS_FOR_URIS ==="
+            if [ -n "${SH_LIST_REPOS:-}" ]; then
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" $COLLECT_STATS_FOR_URIS_FLAG --repos="$SH_LIST_REPOS" $INCLUDE_REMOTE_CACHE_FLAG
+            else
+                _audit_run $COMMAND_NAME list "$SOURCE_AUTHORITY" $COLLECT_STATS_FOR_URIS_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+            fi
+            _show_crawl_audit_log "$SOURCE_AUTHORITY"
+            echo ""
+        fi
+    fi
+    if _should_skip_authority "$TARGET_AUTHORITY"; then
+        echo "=== Skipping target ($TARGET_AUTHORITY) targeted stats — --sha1-resume-authority targets $SHA1_RESUME_AUTHORITY only ==="
+    else
+        echo "=== Collecting targeted stats/properties on target ($TARGET_AUTHORITY) for URIs in $COLLECT_STATS_FOR_URIS ==="
+        if [ -n "${TARGET_REPOS:-}" ]; then
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" $COLLECT_STATS_FOR_URIS_FLAG --repos="$TARGET_REPOS" $INCLUDE_REMOTE_CACHE_FLAG
+        else
+            _audit_run $COMMAND_NAME list "$TARGET_AUTHORITY" $COLLECT_STATS_FOR_URIS_FLAG $INCLUDE_REMOTE_CACHE_FLAG
+        fi
+        _show_crawl_audit_log "$TARGET_AUTHORITY"
+    fi
+    echo ""
 fi
 
 # ----------------------------------------------------------------------------

@@ -600,6 +600,69 @@ errors:   0
 
   **Implemented:** Added `--sha1-resume-authority <id>` flag and `COMPARE_SHA1_RESUME_AUTHORITY` env variable to both `sync-target-from-source.sh` and `compare-and-reconcile.sh`. In `compare-and-reconcile.sh`, added `_should_skip_authority` and `_resume_flag_for` helpers; all six `jf compare list` call sites now skip the crawl entirely when the authority does not match, printing a skip message instead. Updated `README.md` options table (also added missing `--sha1-resume` row) and `03-README-troubleshooting-crawl-errors.md` with a `--sha1-resume-authority` example.
 
+- [x] **T30** Add `--collect-stats-for-uris <file>` flag to collect stats and properties only for a targeted set of URIs (and their parent folders), avoiding a full repo re-crawl.
+
+  **Depends on:** Plugin task 35 in `jfrog-cli-plugin-compare/docs/phase2_sync_delayed.md` (adds `--collect-stats-for-uris` flag to `jf compare list`).
+
+  **Use case:** For large repos (e.g. 7.5M artifacts per authority), `--collect-stats-properties` triggers a full re-crawl that takes ~5 hours per authority. When the user only needs stats/properties for the ~85–500 artifacts in `03_to_sync.sh` and `04_to_sync_delayed.sh`, this is extremely wasteful. The targeted flag collects stats and properties for the listed file URIs **and** automatically derives and collects their parent folder paths — so **all** scripts (05–09) are generated without a full repo crawl. This reduces a 10-hour two-authority crawl to minutes.
+
+  **Implementation:**
+
+  1. Add `--collect-stats-for-uris <file>` flag to `sync-target-from-source.sh` and pass it through to `compare-and-reconcile.sh` (same pattern as `--sha1-resume`). Also support env variable `COMPARE_COLLECT_STATS_FOR_URIS`.
+  2. In `compare-and-reconcile.sh`, when `COLLECT_STATS_FOR_URIS` is set:
+     - Instead of calling `jf compare list <authority> --collect-stats --collect-properties`, call `jf compare list <authority> --collect-stats-for-uris=<file>` for each authority.
+     - Skip `init --clean` (like `--sha1-resume`) to preserve the existing `comparison.db`.
+     - The `--sha1-resume-authority` flag should also work with this: collect targeted stats only on the specified authority.
+  3. Add a helper step (or document a one-liner) to extract URIs from `03_to_sync.sh` and `04_to_sync_delayed.sh`:
+     ```bash
+     jf compare query --csv --header=false \
+       "SELECT DISTINCT path FROM reconcile_phase2_sync
+        UNION
+        SELECT DISTINCT path FROM reconcile_phase2_sync_delayed" \
+       > /tmp/uris_to_collect.txt
+     ```
+  4. Update `show_help` in both scripts, add the option to the `README.md` options table.
+  5. Update `03-README-troubleshooting-crawl-errors.md` or create a new section in `README.md` showing the targeted workflow.
+
+  **Expected workflow:**
+
+  ```bash
+  # Pass 1: Generate sync scripts (fast, no stats/properties crawl)
+  bash sync-target-from-source.sh \
+    --config <config> --generate-only --skip-collect-stats-properties \
+    --include-remote-cache --aql-style sha1-prefix \
+    --aql-page-size 5000 --folder-parallel 16
+
+  # Run 03/04 to sync missing artifacts to target.
+  # Artifacts must exist on the target before 05–09 can apply stats/properties.
+  # --run-only executes all generated scripts in numeric order; --skip-consolidation
+  # skips 01/02. Since 05–09 are empty at this point, only 03/04 run.
+  bash sync-target-from-source.sh --config <config> --run-only --skip-consolidation
+
+  # Extract URIs that were synced
+  jf compare query --csv --header=false \
+    "SELECT DISTINCT path FROM reconcile_phase2_sync
+     UNION
+     SELECT DISTINCT path FROM reconcile_phase2_sync_delayed" \
+    > /tmp/uris_to_collect.txt
+
+  # Pass 2: Collect stats/properties for synced URIs + their parent folders (minutes, not hours)
+  bash sync-target-from-source.sh \
+    --config <config> --generate-only \
+    --collect-stats-for-uris /tmp/uris_to_collect.txt
+
+  # Run 05–09 to apply stats, properties, and folder metadata to the target.
+  # No further crawl — comparison.db already has all data from Passes 1 and 2.
+  # --run-only re-runs all scripts; 03/04 are idempotent so safe to re-execute.
+  bash sync-target-from-source.sh --config <config> --run-only --skip-consolidation
+  ```
+
+  **Scripts generated from targeted collection:** All scripts 05–09 are generated from the targeted collection. The plugin automatically derives parent folder paths from the file URIs (e.g. `/path/to/pkg/-/pkg-1.0.tgz` → folders `/path/to/pkg/-/`, `/path/to/pkg/`, `/path/to/`, `/path/`), crawls those folders with their properties, and inserts them into `artifacts` and `artifact_properties`. This feeds: 05 (`reconcile_stats_actionable`), 06 (`properties_reconcile_phase2_sync_folders`), 07 (`reconcile_download_stats`), 08 (`properties_reconcile_phase2_sync`), and 09 (`reconcile_folder_stats`). Scripts 03/04 remain unchanged from pass 1.
+
+  **Test case:** `testcases/targeted-stats-test/README.md` — end-to-end test using the same `npmjs-remote-cache` → `sv-npmjs-remote-cache-copy1` setup as the `sha1-resume-test`. Covers the full generate→run→generate→run cycle: Pass 1 (generate 03/04 without stats), run 03/04 (sync artifacts to target), URI extraction, Pass 2 (targeted stats/properties collection for files + derived folders), verification that scripts 05–09 are populated, run 05–09 (apply stats/properties to target), and data verification. Includes optional comparison against a full crawl to confirm data equivalence.
+
+  **Implemented:** Added `--collect-stats-for-uris <file>` flag and `COMPARE_COLLECT_STATS_FOR_URIS` env variable to both `sync-target-from-source.sh` and `compare-and-reconcile.sh`. In `compare-and-reconcile.sh`: (1) skip `init --clean` when the flag is set (preserves existing `comparison.db`); (2) skip the basic artifact crawl for both SH and Cloud authorities (data is already in DB from Pass 1); (3) add a new targeted collection section that calls `jf compare list <authority> --collect-stats-for-uris=<file>` for source and target (with `--repos` and `--include-remote-cache` when set); (4) the `_should_skip_authority` helper was extended to support `--sha1-resume-authority` with `--collect-stats-for-uris` (not just `--sha1-resume`). The file is validated to exist before use. Updated `README.md` options table with the new flag.
+
 ---
 
 ## 2. Step-by-step workflow: Reconcile differences in specific (or all) Artifactory repos
