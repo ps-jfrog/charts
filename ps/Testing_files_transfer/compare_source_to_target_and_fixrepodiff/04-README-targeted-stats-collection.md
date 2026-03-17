@@ -248,4 +248,5 @@ bash sync-target-from-source.sh --config <config> --run-only --skip-consolidatio
 - [sync-with-targeted-stats.sh](sync-with-targeted-stats.sh) — one-command orchestrator (runs the full workflow above)
 - [README.md](README.md) — full options reference (including `--collect-stats-for-uris`)
 - [03-README-troubleshooting-crawl-errors.md](03-README-troubleshooting-crawl-errors.md) — error recovery with `--sha1-resume`
-- [testcases/targeted-stats-test/README.md](testcases/targeted-stats-test/README.md) — end-to-end test with verification queries
+- [testcases/targeted-stats-test/README.md](testcases/targeted-stats-test/README.md) — Docker delta sync test: initial sync, publish delta, targeted stats with `--skip-pass1`, single-directory production workflow
+- [testcases/targeted-stats-test/test_npm-targeted-stats-collection.md](testcases/targeted-stats-test/test_npm-targeted-stats-collection.md) — low-level npm repo end-to-end test with verification queries

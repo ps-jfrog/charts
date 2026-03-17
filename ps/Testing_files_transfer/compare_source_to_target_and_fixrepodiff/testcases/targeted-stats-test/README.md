@@ -1,235 +1,286 @@
-# Test: `--collect-stats-for-uris` — targeted stats/properties collection
+# Targeted Stats Collection with SHA1-Resume Test Case
 
-This test verifies that `--collect-stats-for-uris` correctly collects stats and
-properties for only the specified file URIs (and their derived parent folders),
-without re-crawling the entire repository.
+This test validates the end-to-end workflow for syncing Docker images between two
+Artifactory instances, including a targeted delta sync that avoids a full repo re-crawl.
 
-## Prerequisites
+---
 
-- `jf compare` plugin installed with `--collect-stats-for-uris` support (plugin Task 35)
-- Shell wrapper scripts updated with `--collect-stats-for-uris` pass-through (script T30)
-- JFrog CLI profiles `psazuse` and `psazuse1` configured
-- Repos `npmjs-remote-cache` (source) and `sv-npmjs-remote-cache-copy1` (target) exist
-- Target repo `sv-npmjs-remote-cache-copy1` is empty (or has fewer artifacts than source)
+## 1. Prerequisites — Set Docker credentials
 
-## Test scenario
+```
+export DOCKER_USERNAME="svenkate"
+CLI_CONFIG=$(jf c export psazuse | base64 -d)
+ARTIFACTORY_URL=$(echo "$CLI_CONFIG" | jq -r '.url')
+ARTIFACTORY_URL="${ARTIFACTORY_URL%/}"
+MYTOKEN=$(echo "$CLI_CONFIG" | jq -r '.accessToken')
 
-Source repo `npmjs-remote-cache` has ~85 artifacts. Target repo
-`sv-npmjs-remote-cache-copy1` is empty. The test runs a two-pass workflow:
+export DOCKER_PASSWORD="$MYTOKEN"
+```
 
-1. **Pass 1:** Generate sync scripts (03/04) without stats/properties (fast).
-2. **Run 03/04** to sync the missing artifacts to the target.
-3. **Pass 2:** Collect stats/properties only for the ~85 URIs from 03/04 and
-   their parent folders, then generate scripts 05–09.
-4. **Run 05–09** to apply stats, properties, and folder metadata to the target.
+---
 
-This avoids the full `--collect-stats-properties` crawl which would scan the
-entire repo. All data is already in `comparison.db` after Passes 1 and 2 — no
-further crawl is needed to run the scripts.
+## 2. Publish initial Docker images to the source repository
 
-## Steps
+Publish 4 Docker images (tags) to `sv-docker-local`:
 
-### Step 1: Run Pass 1 — generate sync scripts (no stats/properties)
+```
+python /Users/sureshv/mycode/ps-jfrog/charts/ps/publish_to_artifactory/docker_publish/docker_image_generator.py \
+    --image-count 4 \
+    --image-size-mb 10 \
+    --layers 3 \
+    --threads 4 \
+    --registry "${ARTIFACTORY_URL#*//}" \
+    --artifactory-repo "sv-docker-local"
+```
 
-```bash
-cd /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/testcases/targeted-stats-test
+After publishing, add properties on some of the tag folders in `sv-docker-local`.
+
+---
+
+## 3. Initial full sync (one-shot)
+
+Set environment variables and run the full sync:
+
+```
+export JFROG_CLI_LOG_LEVEL=DEBUG
+
+export COMPARE_SOURCE_NEXUS="0"
+export COMPARE_TARGET_ARTIFACTORY_SH="1"
+export COMPARE_TARGET_ARTIFACTORY_CLOUD="1"
+export SH_ARTIFACTORY_BASE_URL="https://psazuse/artifactory/"
+export SH_ARTIFACTORY_AUTHORITY="psazuse"
+export CLOUD_ARTIFACTORY_BASE_URL="https://psazuse/artifactory/"
+export CLOUD_ARTIFACTORY_AUTHORITY="psazuse1"
+export ARTIFACTORY_DISCOVERY_METHOD="artifactory_aql"
+
+export SH_ARTIFACTORY_REPOS="sv-docker-local"
+export CLOUD_ARTIFACTORY_REPOS="docker-trivy-repo"
+
+export RECONCILE_BASE_DIR="/Users/sureshv/From_Customer/smartsheet/compare_and_reconcile_tests/one-shot-test"
 
 bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-target-from-source.sh \
-  --config ./env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --generate-only --skip-collect-stats-properties \
-  --include-remote-cache --aql-style sha1-prefix \
-  --aql-page-size 10 --folder-parallel 16 \
+  --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
   --verification-csv --verification-no-limit
 ```
 
-**Expected outcome:**
-- `comparison.db` is created
-- `b4_upload/03_to_sync.sh` has ~85 lines (all source artifacts missing from empty target)
-- `b4_upload/04_to_sync_delayed.sh` is empty (npm repo has no delayed patterns)
-- `b4_upload/05_to_sync_stats.sh` is empty (no stats collected yet)
-- `b4_upload/06_to_sync_folder_props.sh` is empty (no folder properties collected yet)
+**Expected result:** All files, properties, and folder properties are synced successfully.
 
-### Step 2: Verify 03_to_sync.sh is populated and 05/06 are empty
+---
 
-```bash
-wc -l b4_upload/*.sh
+## 4. Publish a delta of new Docker images
+
+Publish 4 more Docker images (tags) to the source repository:
+
+```
+python /Users/sureshv/mycode/ps-jfrog/charts/ps/publish_to_artifactory/docker_publish/docker_image_generator.py \
+    --image-count 4 \
+    --image-size-mb 10 \
+    --layers 3 \
+    --threads 4 \
+    --registry "${ARTIFACTORY_URL#*//}" \
+    --artifactory-repo "sv-docker-local"
 ```
 
-**Expected output:**
+After publishing, add properties on some of the folders for the new Docker tags that
+you want to sync as a delta.
+
+---
+
+## 5. Crawl the delta and update comparison.db
+
+> **Disk space note:** Steps 5–6 below show two approaches. The **test approach**
+> (5a → 6a) copies `comparison.db` to separate directories for each phase, which
+> preserves intermediate states for debugging but requires multiple copies of the
+> database. For large repos (e.g. 7.5M artifacts where `comparison.db` can be
+> several GB), use the **production approach** (5b → 6b) which reuses a single
+> directory and avoids copying the database entirely.
+
+### 5a. Test approach — separate directory per phase
+
+Copy the existing `comparison.db` to a new working directory and run
+`--generate-only --skip-collect-stats-properties` to crawl the delta without collecting
+stats (fast crawl):
+
 ```
-  85 b4_upload/03_to_sync.sh     (non-zero — artifacts to sync)
-   0 b4_upload/04_to_sync_delayed.sh
-   0 b4_upload/05_to_sync_stats.sh
-   0 b4_upload/06_to_sync_folder_props.sh
-```
+export RECONCILE_BASE_DIR_OLD="$RECONCILE_BASE_DIR"
+export RECONCILE_BASE_DIR="/Users/sureshv/From_Customer/smartsheet/compare_and_reconcile_tests/one-shot-targeted-stats-for-remianing-tags"
+mkdir -p "$RECONCILE_BASE_DIR"
+cp "$RECONCILE_BASE_DIR_OLD/comparison.db" "$RECONCILE_BASE_DIR/"
 
-### Step 3: Run 03/04 — sync missing artifacts to target
-
-```bash
-bash b4_upload/03_to_sync.sh 2>&1 | tee 03_out.log
-# bash b4_upload/04_to_sync_delayed.sh 2>&1 | tee 04_out.log  # skip if empty
-```
-
-**Expected outcome:**
-- Each line in `03_to_sync.sh` runs a `jf rt copy` (or similar) command to sync the artifact to the target
-- No re-crawl occurs — these are direct `jf rt` commands against live Artifactory
-- After completion, the ~85 artifacts exist on the target repo `sv-npmjs-remote-cache-copy1`
-
-**Verify:**
-```bash
-grep -c "SUCCESS\|success\|ok" 03_out.log
-grep -c "ERROR\|error" 03_out.log
-```
-
-### Step 4: Extract URIs from sync scripts
-
-```bash
-jf compare query --csv --header=false \
-  "SELECT DISTINCT path FROM reconcile_phase2_sync
-   UNION
-   SELECT DISTINCT path FROM reconcile_phase2_sync_delayed" \
-  > /tmp/uris_to_collect.txt
-
-wc -l /tmp/uris_to_collect.txt
-cat /tmp/uris_to_collect.txt | head -5
-```
-
-**Expected output:**
-- ~85 URIs (one per line)
-- Each line is a path like `/@anthropic-ai/sdk/-/@anthropic-ai/sdk-0.36.3.tgz`
-
-### Step 5: Run Pass 2 — collect targeted stats/properties
-
-```bash
 bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-target-from-source.sh \
-  --config ./env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --generate-only \
-  --include-remote-cache \
-  --collect-stats-for-uris /tmp/uris_to_collect.txt
-```
-
-**Expected outcome:**
-- `init --clean` is **skipped** (preserves existing `comparison.db`)
-- `jf compare list` commands include `--collect-stats-for-uris=/tmp/uris_to_collect.txt`
-- Only the ~85 URIs (+ derived parent folders) are queried via AQL — **not** the full repo
-- `comparison.db` is updated with stats and properties for those URIs and folders
-
-### Step 6: Verify all scripts 05–09 are now populated
-
-```bash
-wc -l b4_upload/*.sh
-```
-
-**Expected output:**
-```
-   0 b4_upload/01_to_consolidate.sh
-   0 b4_upload/02_to_consolidate_props.sh
-  85 b4_upload/03_to_sync.sh          (unchanged from Pass 1)
-   0 b4_upload/04_to_sync_delayed.sh  (no delayed artifacts in npm repo)
-  85 b4_upload/05_to_sync_stats.sh    (NOW POPULATED — file stats)
-  >0 b4_upload/06_to_sync_folder_props.sh  (NOW POPULATED — folder properties)
-```
-
-### Step 7: Run 05–09 — apply stats, properties, and folder metadata
-
-```bash
-bash b4_upload/05_to_sync_stats.sh 2>&1 | tee 05_out.log
-bash b4_upload/06_to_sync_folder_props.sh 2>&1 | tee 06_out.log
-# Run the remaining scripts if they are populated:
-# bash b4_upload/07_to_sync_download_stats.sh 2>&1 | tee 07_out.log
-# bash b4_upload/08_to_sync_props.sh 2>&1 | tee 08_out.log
-# bash b4_upload/09_to_sync_folder_stats_as_properties.sh 2>&1 | tee 09_out.log
-```
-
-**Expected outcome:**
-- Each script runs `jf rt` commands to set stats/properties on the target Artifactory
-- No crawl or `jf compare list` is invoked — only `jf rt` commands
-- All data comes from `comparison.db` which was populated in Passes 1 and 2
-
-**Verify:**
-```bash
-grep -c "SUCCESS\|success\|ok" 05_out.log 06_out.log
-grep -c "ERROR\|error" 05_out.log 06_out.log
-```
-
-### Step 8: Verify stats were collected only for targeted URIs
-
-```bash
-# Count artifacts with stats_collected_at set (should be ~85, not 7.5M)
-jf compare query "SELECT COUNT(*) FROM artifacts WHERE source='psazuse' AND stats_collected_at IS NOT NULL"
-
-# Count artifact_properties rows (should be non-zero, scoped to targeted artifacts)
-jf compare query "SELECT COUNT(*) FROM artifact_properties"
-
-# Verify node_statistics only has rows for targeted URIs
-jf compare query "SELECT COUNT(*) FROM node_statistics WHERE source='psazuse'"
-```
-
-**Expected output:**
-- `stats_collected_at` count ≈ 85 (file URIs only, or slightly more if folders also set it)
-- `artifact_properties` count > 0 (properties for files + folders)
-- `node_statistics` count ≈ number of targeted files + folders (not the full repo)
-
-### Step 9: Verify folder data was collected
-
-```bash
-# Count folder nodes in artifacts table (derived from file URIs)
-jf compare query "SELECT COUNT(*) FROM artifacts WHERE source='psazuse' AND sha1 IS NULL AND sha2 IS NULL AND md5 IS NULL AND uri != '/'"
-
-# Check properties_sync_mismatch_folders has rows
-jf compare query "SELECT COUNT(*) FROM properties_sync_mismatch_folders"
-
-# Check reconcile_folder_stats has rows (if source has folder metadata)
-jf compare query "SELECT COUNT(*) FROM reconcile_folder_stats"
-```
-
-**Expected output:**
-- Folder count > 0 (parent folders derived from file URIs)
-- `properties_sync_mismatch_folders` count >= 0 (depends on whether source folders have properties)
-- `reconcile_folder_stats` count >= 0 (depends on whether source folders have `created_by`/`modified_by`)
-
-### Step 10 (optional): Compare with full crawl
-
-To verify the targeted collection matches a full crawl for the same URIs:
-
-```bash
-# Save targeted results
-jf compare query --csv "SELECT * FROM reconcile_stats_actionable ORDER BY path" > /tmp/targeted_stats.csv
-jf compare query --csv "SELECT * FROM properties_reconcile_phase2_sync ORDER BY path" > /tmp/targeted_props.csv
-
-# Now run the full crawl (slow — only do this for verification)
-bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-target-from-source.sh \
-  --config ./env_app2_app3_same_jpd_different_repos_npm_sha1-prefix.sh \
-  --generate-only \
+  --generate-only --skip-collect-stats-properties \
   --include-remote-cache --aql-style sha1-prefix \
-  --aql-page-size 10 --folder-parallel 16
-
-# Save full-crawl results
-jf compare query --csv "SELECT * FROM reconcile_stats_actionable ORDER BY path" > /tmp/full_stats.csv
-jf compare query --csv "SELECT * FROM properties_reconcile_phase2_sync ORDER BY path" > /tmp/full_props.csv
-
-# Compare — targeted should be a subset of (or equal to) full
-diff /tmp/targeted_stats.csv /tmp/full_stats.csv
-diff /tmp/targeted_props.csv /tmp/full_props.csv
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
 ```
 
-## What to verify
+### 5b. Production approach — reuse the same directory
 
-| Check | How | Expected |
-|-------|-----|----------|
-| 03/04 scripts run successfully | `grep -c SUCCESS 03_out.log` | All copy commands succeed, artifacts exist on target |
-| `init --clean` skipped in Pass 2 | Look for "Resume mode" or skip message in output | Present when `--collect-stats-for-uris` is used |
-| `--collect-stats-for-uris` passed to plugin | Check `compare-and-reconcile-command-audit-*.log` | `jf compare list` commands include `--collect-stats-for-uris=...` |
-| Only targeted URIs queried | Check `crawl-audit-*.log` | Small number of items (~85 files + derived folders), not full repo |
-| 05_to_sync_stats.sh populated | `wc -l b4_upload/05_to_sync_stats.sh` | ~85 lines |
-| 06_to_sync_folder_props.sh populated | `wc -l b4_upload/06_to_sync_folder_props.sh` | > 0 lines (folder properties) |
-| 05–09 scripts run successfully | `grep -c SUCCESS 05_out.log 06_out.log` | Stats/properties applied to target, no errors |
-| Properties collected | `jf compare query "SELECT COUNT(*) FROM artifact_properties"` | > 0 |
-| Folders derived from URIs | `jf compare query "SELECT COUNT(*) FROM artifacts WHERE sha1 IS NULL AND uri != '/'"` | > 0 |
-| `--sha1-resume-authority` compatible | Add `--sha1-resume-authority psazuse1` to Pass 2 | Only target authority is queried |
+Run the crawl in the same `RECONCILE_BASE_DIR` used in step 3. The
+`--generate-only` flag triggers `init --clean`, which wipes the old `comparison.db`
+and does a fresh crawl. This is safe because the initial sync (step 3) already
+completed — the old database is no longer needed.
 
-## Cleanup
-
-```bash
-rm -rf b4_upload/ after_upload/ comparison.db *.csv *.log /tmp/uris_to_collect.txt
 ```
+bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-target-from-source.sh \
+  --generate-only --skip-collect-stats-properties \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+```
+
+**Expected result (both approaches):** `comparison.db` is updated with the delta.
+Scripts `03_to_sync.sh` / `04_to_sync_delayed.sh` are generated in `b4_upload/` but
+not executed.
+
+---
+
+## 6. Run targeted sync with `--skip-pass1`
+
+Since step 5 already crawled the delta, use `--skip-pass1` to skip the redundant crawl.
+
+**Edge case:** If step 5 was run with an older plugin (before Task 38) but this step
+uses a newer plugin, the `targeted_uris` table won't exist in the DB. In that case,
+uncomment the `jf compare init` line below to create the table schema without wiping
+existing data — see [Section 8](#8-troubleshooting--older-comparisondb-missing-targeted_uris).
+
+### 6a. Test approach — separate directory per phase
+
+Copy the updated `comparison.db` to a new working directory:
+
+```
+export RECONCILE_BASE_DIR_OLD="$RECONCILE_BASE_DIR"
+export RECONCILE_BASE_DIR="/Users/sureshv/From_Customer/smartsheet/compare_and_reconcile_tests/one-shot-targeted-stats-with-skip-pass1"
+mkdir -p "$RECONCILE_BASE_DIR"
+cp "$RECONCILE_BASE_DIR_OLD/comparison.db" "$RECONCILE_BASE_DIR/"
+
+# Only needed if comparison.db was created with a plugin version before Task 38:
+# cd "$RECONCILE_BASE_DIR" && jf compare init
+
+bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-with-targeted-stats.sh \
+  --skip-pass1 \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --run-folder-stats --run-delayed \
+  --verification-csv --verification-no-limit
+```
+
+### 6b. Production approach — reuse the same directory
+
+Run directly in the same `RECONCILE_BASE_DIR` from step 5. No copy needed — the
+orchestrator enriches `comparison.db` with targeted stats/properties (via
+`--collect-stats-for-uris`) and uses `--skip-compare` internally to prevent
+`init --clean` from wiping the database.
+
+```
+# Only needed if comparison.db was created with a plugin version before Task 38:
+# cd "$RECONCILE_BASE_DIR" && jf compare init
+
+bash /Users/sureshv/mycode/ps-jfrog/charts/ps/Testing_files_transfer/compare_source_to_target_and_fixrepodiff/sync-with-targeted-stats.sh \
+  --skip-pass1 \
+  --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --run-folder-stats --run-delayed \
+  --verification-csv --verification-no-limit
+```
+
+**Caveat:** During the "Run 05–09" phase, the orchestrator executes all scripts in
+`b4_upload/` (including `03_to_sync.sh` / `04_to_sync_delayed.sh` which already ran
+in "Run 03/04"). This is redundant but harmless — the artifacts are already on the
+target, so copy/upload commands are effectively no-ops.
+
+**Expected result (both approaches):** The orchestrator extracts URIs, runs 03/04 to
+sync artifacts, collects targeted stats/properties (Pass 2), generates and runs
+scripts 05–09. Only the delta folders/files are processed.
+
+Verify that all tag and folder properties for the new images are present in the target repo.
+
+---
+
+## 7. Populating the `targeted_uris` table (plugin Task 38)
+
+The `targeted_uris` table is used by the after-upload views (`reconcile_folder_stats`,
+`reconcile_download_stats`, `properties_reconcile_phase2_sync`) to scope scripts 07–09
+to only the delta folders/files. The table is populated **automatically** by the plugin
+during `jf compare list --collect-stats-for-uris`.
+
+In the targeted stats workflow (`sync-with-targeted-stats.sh`), Pass 2 already runs
+this command, so the table is filled before scripts 07–09 are generated. No manual
+action is needed.
+
+### 7.1. Verify `targeted_uris`
+
+```
+jf compare query "SELECT count(*) FROM targeted_uris"
+jf compare query "SELECT * FROM targeted_uris LIMIT 5"
+```
+
+When `targeted_uris` is non-empty, the after-upload views automatically join with it,
+so scripts 07–09 contain only the delta — not all previously synced folders.
+
+---
+
+## 8. Troubleshooting — Older comparison.db missing `targeted_uris`
+
+If you are working with a `comparison.db` created before Task 38, the `targeted_uris`
+table won't exist. Follow these sub-steps to create the schema and populate the table.
+
+### 8.1. Create the missing table schema
+
+Run `jf compare init` (without `--clean`) to add the new table without wiping existing data:
+
+```
+cd "$RECONCILE_BASE_DIR"
+jf compare init
+```
+
+### 8.2. Regenerate `uris_to_collect.txt` (if missing)
+
+If `uris_to_collect.txt` was deleted or was never created (e.g. step 5 was run with an
+older plugin), regenerate it from `comparison.db` using the same query that
+`sync-with-targeted-stats.sh` uses:
+
+```
+cd "$RECONCILE_BASE_DIR" && \
+  jf compare query --csv --header=false \
+    "SELECT DISTINCT path FROM reconcile_phase2_sync
+     UNION
+     SELECT DISTINCT path FROM reconcile_phase2_sync_delayed" \
+    > "$RECONCILE_BASE_DIR/uris_to_collect.txt"
+```
+
+This works as long as `comparison.db` still has the delta (i.e. you used `--generate-only`
+in step 5 and haven't run `--run-only` yet, which would sync artifacts and zero out
+the views).
+
+Verify the file:
+
+```
+wc -l "$RECONCILE_BASE_DIR/uris_to_collect.txt"
+head -5 "$RECONCILE_BASE_DIR/uris_to_collect.txt"
+```
+
+### 8.3. Re-run targeted collection to populate `targeted_uris`
+
+Run the targeted collection for both authorities to populate the table:
+
+```
+jf compare list psazuse \
+  --collect-stats-for-uris "$RECONCILE_BASE_DIR/uris_to_collect.txt" \
+  --repos=sv-docker-local --include-remote-cache
+
+jf compare list psazuse1 \
+  --collect-stats-for-uris "$RECONCILE_BASE_DIR/uris_to_collect.txt" \
+  --repos=docker-trivy-repo --include-remote-cache
+```
+
+### 8.4. Verify
+
+```
+jf compare query "SELECT count(*) FROM targeted_uris"
+jf compare query "SELECT * FROM targeted_uris LIMIT 5"
+```
+
+After completing steps 8.1–8.4, return to [step 6](#6-run-targeted-sync-with---skip-pass1)
+to run the targeted sync.
