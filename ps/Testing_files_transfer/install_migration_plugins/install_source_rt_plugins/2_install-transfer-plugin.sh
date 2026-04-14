@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Usage:
-# ./1_install-transfer-plugin.sh <ACCESS_TOKEN> <ARTIFACTORY_URL>
+# ./2_install-transfer-plugin.sh <ACCESS_TOKEN> <ARTIFACTORY_URL>
 # OR
 # export JFROG_ACCESS_TOKEN=<token>
-# ./1_install-transfer-plugin.sh <ARTIFACTORY_URL>
+# ./2_install-transfer-plugin.sh <ARTIFACTORY_URL>
 # OR
 # export JFROG_ACCESS_TOKEN=<token>
 # export ARTIFACTORY_URL=http://localhost:8082/artifactory
-# ./1_install-transfer-plugin.sh
+# ./2_install-transfer-plugin.sh
 
 set -e
 

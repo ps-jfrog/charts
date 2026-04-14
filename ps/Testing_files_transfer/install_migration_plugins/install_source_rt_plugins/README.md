@@ -74,6 +74,29 @@ In any one of the nodes of your Artifactory HA cluster:
 
 3. The plugin will automatically be installed  in all nodes in your HA cluster.
 
+**Note:** If Artifactory is not installed under `/opt/jfrog/artifactory`, edit `2_install-transfer-plugin.sh` **before** you copy it to the node (or edit the copy in `/tmp`) so the paths match your layout:
+
+1. **`JFROG_HOME`** (default `/opt/jfrog`) — Set this to the directory that **contains** the `artifactory` folder. Example: if your install is `/data/jfrog/artifactory/...`, use `JFROG_HOME=/data/jfrog`.
+2. **`WORK_DIR`** (default `/opt/jfrog/artifactory/var/tmp`) — Set this to your instance’s `var/tmp` under that Artifactory home, e.g. `$JFROG_HOME/artifactory/var/tmp` with your actual `$JFROG_HOME`.
+
+The script writes the plugin JAR and Groovy file under `$JFROG_HOME/artifactory/var/etc/artifactory/plugins/`; those lines assume the same `JFROG_HOME` you set above.
+
+Also confirm:
+
+- **`sudo -u artifactory`** — Use the real OS user that runs the Artifactory process if it is not `artifactory`.
+
+`2_install-transfer-plugin.sh` already checks that the plugin installed and that the reload reported success. To confirm manually, list plugins with the JFrog CLI using the same configuration the install script created.
+
+Before running `jf`, point the CLI at the same home directory the install used: export `JFROG_CLI_HOME_DIR` to `$WORK_DIR/.jfrog`, where `$WORK_DIR` is the value set in `2_install-transfer-plugin.sh` (default: `/opt/jfrog/artifactory/var/tmp`). Alternatively, run the command from that `$WORK_DIR` and invoke the local `./jf` binary placed there by the install script.
+
+```bash
+export JFROG_CLI_HOME_DIR=/opt/jfrog/artifactory/var/tmp/.jfrog   # adjust if you changed WORK_DIR
+cd /opt/jfrog/artifactory/var/tmp                                  # same directory as WORK_DIR
+./jf rt curl -XGET "/api/plugins" --server-id source-server
+```
+
+On a High Availability cluster, plugin definitions are shared across the cluster; you should see `dataTransfer.groovy` at `$JFROG_HOME/artifactory/var/etc/artifactory/plugins/dataTransfer.groovy` on each node (using each node’s `$JFROG_HOME` if paths differ per host).
+
 ---
 
 ## What the Scripts Do
