@@ -348,6 +348,19 @@ The [prepare_and_generate_comparison_report.sh](prepare_and_generate_comparison_
 
 This script simplifies the workflow by handling all the prerequisite steps before running the comparison. For more information, see the [prepare_and_generate_comparison_report README](prepare_and_generate_comparison_report/README.md).
 
+#### Newer Alternative: JFrog Transfer Automation
+
+A more comprehensive solution is available in [jfrog-transfer-automation](https://github.com/ps-jfrog/automate_transfer_files_and_jpd_compare_report/tree/main/jfrog-transfer-automation). It automates daily delta syncs using `jf rt transfer-files`, generates comparison reports, and optionally sends notifications — all in a single tool. Key features include:
+
+- **Pre-flight connectivity check** — validates source↔target connectivity before every transfer
+- **Two transfer modes**: `single_command` (all repos in one command) and `per_repo` (with batching, stuck detection, and error isolation)
+- **Daily scheduler** with non-overlapping runs, dry-run mode, resume, and continuous monitoring
+- **Per-repo isolated CLI home directories** (optional) to prevent conflicts during parallel transfers
+- **Windows-friendly report generation** (no bash/jq dependency)
+- **Background execution** support
+
+See the [jfrog-transfer-automation README](https://github.com/ps-jfrog/automate_transfer_files_and_jpd_compare_report/blob/main/jfrog-transfer-automation/README.md) for installation, quick start, and configuration details.
+
 ## Comparing Artifacts Between Instances
 
 The [compare-artifacts.sh](compare_source_to_target/compare-artifacts.sh) script can be used to compare artifacts between different sources (Nexus or Artifactory) and Artifactory targets using the JFrog CLI compare tool. The script supports comparing:
@@ -356,5 +369,49 @@ The [compare-artifacts.sh](compare_source_to_target/compare-artifacts.sh) script
 
 Please review the  examples of [Available Comparison Scenarios](compare_source_to_target/README.md#examples) in the [compare_source_to_target/README.md](compare_source_to_target/README.md)
 
+### Newer Alternative: Compare and Sync with sync-target-from-source.sh
+
+A more comprehensive solution is available in [compare_source_to_target_and_fixrepodiff](compare_source_to_target_and_fixrepodiff/). The [sync-target-from-source.sh](compare_source_to_target_and_fixrepodiff/sync-target-from-source.sh) script not only compares artifacts between source and target but also **syncs the differences** — transferring missing artifacts, stats, properties, and folder metadata — so the target matches the source.
+
+It automates the full compare-and-reconcile workflow in one invocation:
+1. Before-upload compare (generates reconciliation scripts 01–06)
+2. Execute before-upload scripts (sync missing artifacts, consolidate, apply properties)
+3. After-upload compare (generates scripts 07–09)
+4. Execute after-upload scripts (sync stats, properties, folder stats)
+5. Post-sync verification via `verify-comparison-db.sh`
+
+#### Recommended workflow: two-pass with verification
+
+Generate scripts first for review, then execute:
+
+```bash
+# Pass 1: generate before-upload scripts for review
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh \
+  --generate-only --include-remote-cache --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+
+# Pass 2: execute generated scripts, run after-upload compare, and run 07–09
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh \
+  --run-only --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+```
+
+#### One-shot run (single command)
+
+If you don't need to review the generated scripts, run everything end-to-end:
+
+```bash
+bash sync-target-from-source.sh \
+  --config config_env_examples/env_app1_app2_diff_jpds_same_repo_names.sh \
+  --include-remote-cache --run-folder-stats --run-delayed --aql-style sha1-prefix \
+  --aql-page-size 5000 --folder-parallel 16 \
+  --verification-csv --verification-no-limit
+```
+
+For full details on options, config file examples, output directories, crawl audit logs, targeted stats collection, and troubleshooting, see the [compare_source_to_target_and_fixrepodiff README](compare_source_to_target_and_fixrepodiff/README.md#recommended-workflow-two-pass-with-verification).
 
 
