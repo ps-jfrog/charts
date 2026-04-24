@@ -6,7 +6,15 @@ If  any repos in the source Artifactory have files that have not been transferre
 Artifactory repos  the report also generates the necessary [repodiff.py](../repoDiff/repodiff.py) commands  that 
 can be run to get the delta in the `"output/<source-repo>/cleanpaths.txt"` as explained in the [readme.md](../repoDiff/readme.md)
 
-**cleanpaths.txt**: Contains the URIs of artifacts present in the source repository but missing in the target repository. It also provides statistics on the total size and file extensions.
+- **cleanpaths.txt**: Contains the URIs of artifacts present in the source repository but missing in the target repository. It also provides statistics on the total size and file extensions.
+
+- **filepaths_nometadatafiles.txt**: The **actionable transfer list** — a filtered subset of `cleanpaths.txt` with
+  repository-managed metadata files removed (e.g. `maven-metadata.xml`, `repomd.xml`, `Packages.gz`, etc.).
+  These are the actual binaries that should be transferred from the source to the target repository.
+
+**Note:** `cleanpaths.txt` contains the full delta (binaries + metadata files). `filepaths_nometadatafiles.txt` is the subset with metadata files removed — these are the actual binaries to transfer.
+The excluded metadata files (those in `cleanpaths.txt` but not in `filepaths_nometadatafiles.txt`) should **not** be manually transferred because Artifactory regenerates them automatically when you
+[Recalculate the Repository Index](https://jfrog.com/help/r/artifactory-what-does-artifactory-s-recalculate-index-option-do-and-how-do-i-keep-track-of-it/recalculating-a-repository-index). Manually transferring those metadata files is unnecessary and can cause inconsistencies.
 
 ## Recent Improvements
 
