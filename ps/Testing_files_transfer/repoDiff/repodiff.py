@@ -32,6 +32,21 @@ def fetch_repository_data(artifactory, repo, output_file, path_in_repo=None):
     except subprocess.CalledProcessError as e:
         print("Command failed with error:", e.stderr)
 
+
+def _is_non_empty_file(path):
+    return os.path.exists(path) and os.path.getsize(path) > 0
+
+
+# Wrapper around fetch_repository_data that can reuse an existing non-empty
+# log file (used by --phase2 to avoid re-running `jf rt curl` when source.log
+# and target.log are already present).
+def ensure_repo_data(artifactory, repo, output_file, path_in_repo, skip_if_present=False):
+    if skip_if_present and _is_non_empty_file(output_file):
+        print(f"Reusing existing non-empty file: {output_file} (skipping fetch_repository_data)")
+        return
+    fetch_repository_data(artifactory, repo, output_file, path_in_repo)
+
+
 # Load the contents of the JSON files
 def load_json_file(file_path):
     with open(file_path, 'r') as json_file:
@@ -174,6 +189,50 @@ def write_artifact_stats_from_source_data(source_data, unique_uris, output_file)
         for uri, timestamp_utc in sorted_artifact_info:
             out_file.write(f"{timestamp_utc}\t{uri}\n")
 
+# Helpers for the phase2 (URI-only) diff. Mirrors the algorithm in
+# replicationDiff_w_python_v5.py but normalizes URIs the same way as phase1
+# (strips the leading '/') so cleanpaths.txt and cleanpaths_phase2.txt can be
+# diffed line-by-line. Unlike phase1, NO content filtering is applied
+# (no size>0, no `_uploads/`, no `repository.catalog`, no leading-dot drop).
+def extract_uri_set(data):
+    uris = set()
+    for item in data.get('files', []):
+        u = item.get('uri', '')
+        if u.startswith('/'):
+            u = u[1:]
+        if u:
+            uris.add(u)
+    return uris
+
+
+def compute_total_size(data, uris):
+    uri_set = set(uris)
+    total = 0
+    for item in data.get('files', []):
+        u = item.get('uri', '')
+        if u.startswith('/'):
+            u = u[1:]
+        if u in uri_set:
+            size = item.get('size', 0) or 0
+            if size > 0:
+                total += size
+    return total
+
+
+# Phase2 entry point: pure URI set difference, written to cleanpaths_phase2.txt
+# using the same writer as phase1 so the two outputs are diff-friendly.
+def run_phase2(source_data, target_data, output_dir):
+    source_uris = extract_uri_set(source_data)
+    target_uris = extract_uri_set(target_data)
+    unique_uris = sorted(source_uris - target_uris)
+    total_size = compute_total_size(source_data, unique_uris)
+    out_file = os.path.join(output_dir, "cleanpaths_phase2.txt")
+    write_unique_uris(out_file, unique_uris, total_size)
+    print(f"Phase2 output written to: {out_file} "
+          f"(unique URIs: {len(unique_uris)}, total size: {total_size})")
+    return out_file, len(unique_uris), total_size
+
+
 def extract_file_info(files):
     return {file['uri'][1:]: (file['size'], file['sha1']) for file in files if 'sha1' in file}
 
@@ -204,22 +263,42 @@ def main():
     parser.add_argument("--source-repo", required=True, help="Source repository name")
     parser.add_argument("--target-repo", required=True, help="Target repository name")
     parser.add_argument("--path-in-repo", help="Optional parameter: Path within the repository")
+    parser.add_argument(
+        "--phase2",
+        action="store_true",
+        help=(
+            "Run a second-opinion URI-only diff (mirrors replicationDiff_w_python_v5.py). "
+            "Reuses output/<source_repo>/source.log and target.log if they already exist "
+            "and are non-empty (no jf rt curl is performed). Writes cleanpaths_phase2.txt "
+            "and skips all phase1 outputs."
+        ),
+    )
     args = parser.parse_args()
 
     # Create the output directory if it doesn't exist
     output_dir = f"output/{args.source_repo}"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Fetch data from repositories
+    # Fetch data from repositories. In phase2, reuse existing non-empty logs.
     source_log_file = os.path.join(output_dir, "source.log")
-    fetch_repository_data(args.source_artifactory, args.source_repo, source_log_file, args.path_in_repo)
-
     target_log_file = os.path.join(output_dir, "target.log")
-    fetch_repository_data(args.target_artifactory, args.target_repo, target_log_file, args.path_in_repo)
+    skip_if_present = bool(args.phase2)
+    ensure_repo_data(args.source_artifactory, args.source_repo,
+                     source_log_file, args.path_in_repo,
+                     skip_if_present=skip_if_present)
+    ensure_repo_data(args.target_artifactory, args.target_repo,
+                     target_log_file, args.path_in_repo,
+                     skip_if_present=skip_if_present)
 
     # Load the contents of the JSON files
     source_data = load_json_file(source_log_file)
     target_data = load_json_file(target_log_file)
+
+    # Phase2: URI-only set difference, writes a single new output file and returns.
+    # Phase1 outputs are intentionally NOT regenerated.
+    if args.phase2:
+        run_phase2(source_data, target_data, output_dir)
+        return
 
     try:
         # Create the initial dictionary with the desired URIs and their sizes.

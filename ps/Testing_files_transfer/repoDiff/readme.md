@@ -61,7 +61,7 @@ The `universal_newlines=True` argument provides similar functionality, making th
 ```bash
    python repodiff.py --source-artifactory SOURCE_ARTIFACTORY_ID --target-artifactory TARGET_ARTIFACTORY_ID \
       --source-repo SOURCE_REPOSITORY_NAME --target-repo TARGET_REPOSITORY_NAME \
-      [--path-in-repo  <path_within_repository>]
+      [--path-in-repo  <path_within_repository>] [--phase2]
 ```
 ### Arguments:
 
@@ -70,6 +70,9 @@ The `universal_newlines=True` argument provides similar functionality, making th
 - `--source-repo`: The name of the source repository.
 - `--target-repo`: The name of the target repository.
 - `--path-in-repo` (optional): Path within the repository ( example: for repo docker-dev-local it can be app1/tag1 i.e the path with no repo name and ending "/" )
+- `--phase2` (optional): Run a second-opinion **URI-only** diff (mirrors the
+  algorithm in [replicationDiff_w_python_v5.py](replicationDiff_w_python_v5.py)).
+  See [Phase 2 cross-check](#phase-2-cross-check-uri-only-diff) below.
 
 The repodiff.py will perform the following actions:
 
@@ -96,6 +99,10 @@ The script generates the following output files:
   sorted in descending order of lastDownloaded timestamp in UTC. If an artifact has never been downloaded,  a default timestamp of **"Jan 1, 1900, 00:00:00 UTC"** is used.
 - **all_delta_paths_with_differnt_sizes.txt**: List of paths with size , sha1 mismatches or missing in the target.
 
+- **cleanpaths_phase2.txt** (only when `--phase2` is used): Second-opinion
+  URI-only diff (no filtering, no sha1 check). See
+  [Phase 2 cross-check](#phase-2-cross-check-uri-only-diff) below.
+
 **Note:** `cleanpaths.txt` contains the full delta (binaries + metadata files). `filepaths_nometadatafiles.txt` is the subset with metadata files removed — these are the actual binaries to transfer.
 The excluded metadata files (those in `cleanpaths.txt` but not in `filepaths_nometadatafiles.txt`) should **not** be manually transferred because Artifactory regenerates them automatically when you
 [Recalculate the Repository Index](https://jfrog.com/help/r/artifactory-what-does-artifactory-s-recalculate-index-option-do-and-how-do-i-keep-track-of-it/recalculating-a-repository-index). Manually transferring those metadata files is unnecessary and can cause inconsistencies.
@@ -107,6 +114,88 @@ Another option is to use the `compare` plugin as mentiond in https://github.com/
 For Example:
 - [Calculate Maven Metadata](https://jfrog.com/help/r/jfrog-rest-apis/calculate-maven-metadata) .
 - [Calculate Alpine Repository Metadata](https://jfrog.com/help/r/jfrog-rest-apis/calculate-alpine-repository-metadata) etc
+
+## Next step — fix the repo diff
+
+Once `repodiff.py` has produced the delta, use
+[../fix_the_repoDiff/transfer_cleanpaths_delta_from_repoDiff.py](../fix_the_repoDiff/transfer_cleanpaths_delta_from_repoDiff.py)
+to actually move the missing artifacts from source to target. In short, that
+script reads `filepaths_nometadatafiles.txt` (or `cleanpaths.txt`), runs a
+`jf rt dl` → `jf rt u` → properties-PATCH pipeline per artifact in parallel,
+and writes `successful_commands_file.txt` / `failed_commands_file.txt` for
+review.
+
+- Recommended input: `filepaths_nometadatafiles.txt` (binaries only;
+  Artifactory will regenerate metadata via Recalculate Index).
+- **Docker repos:** use `cleanpaths.txt` instead, because `manifest.json` and
+  `list.manifest.json` must be transferred and would otherwise be filtered out
+  as metadata.
+
+Full usage, parameters, parallelism tuning, and log/output details are in
+[../fix_the_repoDiff/readme.md](../fix_the_repoDiff/readme.md).
+
+## Phase 2 cross-check (URI-only diff)
+
+If you are not convinced that `cleanpaths.txt` (the phase1 default output) is
+complete, run a second-opinion URI-only diff with the `--phase2` flag. This
+mirrors the simpler algorithm in
+[replicationDiff_w_python_v5.py](replicationDiff_w_python_v5.py) and lets you
+compare both views side by side.
+
+```bash
+# Step 1: run the default phase1 (this fetches source.log and target.log)
+python repodiff.py --source-artifactory src --target-artifactory tgt \
+  --source-repo my-repo --target-repo my-repo
+
+# Step 2: run phase2 against the SAME logs (no jf rt curl is performed)
+python repodiff.py --source-artifactory src --target-artifactory tgt \
+  --source-repo my-repo --target-repo my-repo --phase2
+
+# Step 3: compare
+diff output/my-repo/cleanpaths.txt output/my-repo/cleanpaths_phase2.txt
+```
+
+What `--phase2` does:
+- **Reuses** `output/<source-repo>/source.log` and `output/<source-repo>/target.log`
+  if they exist and are non-empty (no `jf rt curl` is run). If either log is
+  missing or empty it is fetched automatically and the script logs that it
+  did so.
+- Computes `source_uris - target_uris` as a **plain set difference** on URIs,
+  with **no filtering** (so dot-prefixed paths like `.npm/`, `_uploads/`,
+  `repository.catalog`, and zero-byte / folder entries that phase1 hides will
+  appear here).
+- Writes a new file **`cleanpaths_phase2.txt`** in `output/<source-repo>/`
+  using the same format as `cleanpaths.txt` so the two are diff-friendly.
+- **Does not regenerate** any phase1 output files (`cleanpaths.txt`,
+  `filepaths_uri.txt`, `filepaths_nometadatafiles.txt`,
+  `filepaths_uri_lastDownloaded_desc.txt`,
+  `all_delta_paths_with_differnt_sizes.txt`).
+
+### How to interpret the results
+
+Phase1 (`cleanpaths.txt`) and phase2 (`cleanpaths_phase2.txt`) are
+**complementary views**, not "less accurate vs more accurate":
+
+| | Phase 1 (`cleanpaths.txt`) | Phase 2 (`cleanpaths_phase2.txt`) |
+|---|---|---|
+| Filters out `_uploads/`, `repository.catalog`, dot-prefixed (`.npm`, `.jfrog`, ...), zero-byte | Yes | **No** |
+| Detects `sha1` mismatches (URI in target but content differs) | **Yes** | No |
+| Detects URIs missing in target | Yes | Yes |
+
+So phase2 may show **extra** entries (paths phase1 intentionally hides) and
+phase1 may show **extra** entries (sha1 mismatches that phase2 cannot see).
+The set of artifacts that actually need transferring is normally the phase1
+view — the phase2 list is for sanity checking that nothing important was
+filtered out.
+
+### Caveats
+
+- `--phase2` reuses **whatever is already in `source.log` / `target.log`**.
+  If those logs are stale, the diff is stale. Delete them (or drop
+  `--phase2`) to force a fresh fetch.
+- The reused logs must have been generated with the same `--path-in-repo`
+  value; otherwise the comparison is meaningless. If in doubt, delete the
+  logs and re-run without `--phase2` first.
 
 ## 🔁 Running `repodiff.py` for All Local Repositories
 
