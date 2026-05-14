@@ -14,6 +14,52 @@ This directory contains scripts to install the Artifactory Data Transfer plugin 
 
 ## Installation Methods
 
+The  easiest way to install the plugin is to install the data-transfer user plugin in the first node or artifactory pod of the source instance ( if it has access to internet) as mentioned in “[Step 2: Set up the source instance for pushing files to the target instance](https://docs.jfrog.com/integrations/docs/cli-for-jfrog-cloud-transfer#step-2-set-up-the-source-instance-for-pushing-files-to-the-target-instance)” i.e :
+
+a) Install the `jf` cli using curl .
+
+If you have sudo access install as mentioned in https://jfrog.com/getcli/ 
+which installs jf in /usr/local/bin
+```
+curl -fL https://install-cli.jfrog.io | sh
+```
+
+or as mentioned in [2_install-transfer-plugin.sh](2_install-transfer-plugin.sh)
+```
+# Set working directory
+WORK_DIR=/opt/jfrog/artifactory/var/tmp
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
+
+echo "📥 Downloading JFrog CLI to $WORK_DIR..."
+curl -fkLsS https://getcli.jfrog.io/v2-jf | sh
+
+echo "🔧 Setting executable permission..."
+chmod +x jf
+```
+b) configure the jf cli to connect to the source server:
+```
+# Set the JFROG_CLI_HOME_DIR if needed:
+export JFROG_CLI_HOME_DIR="$WORK_DIR/.jfrog"
+
+echo "⚙️ Configuring JFrog CLI with Artifactory at $ARTIFACTORY_URL..."
+./jf c add source-server \
+  --interactive=false \
+  --artifactory-url "http://localhost:8082/artifactory" \
+  --access-token "$ACCESS_TOKEN" \
+  --insecure-tls=true \
+  --overwrite=true
+
+echo "📡 Verifying connection with Artifactory..."
+./jf rt ping --server-id source-server 
+```
+c) Next install the data transfer plugin:
+
+```
+jf rt transfer-plugin-install source-server [--home-dir /opt/jfrog]
+```
+Otherwise use one of the following methods:
+
 ### Method 1: Kubernetes-based Artifactory Installation
 
 #### Prerequisites
