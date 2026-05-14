@@ -63,6 +63,13 @@ You should see below output:
 18:11:01 [🔵Info] Installing 'data-transfer' plugin...
 18:11:08 [🔵Info] The data-transfer plugin installed successfully.
 ```
+d) Then when  the source artifactory has a HA setup, from any client machine which has jf cli configured to the source JPD you can reload the plugin from the loadbalancer url using:
+```
+jf rt curl -XGET "/api/plugins/reload" --server-id source-server
+
+# Then verify using:
+jf rt curl -XGET "/api/plugins" --server-id source-server
+```
 
 Otherwise use one of the following methods:
 
@@ -144,6 +151,7 @@ Before running `jf`, point the CLI at the same home directory the install used: 
 ```bash
 export JFROG_CLI_HOME_DIR=/opt/jfrog/artifactory/var/tmp/.jfrog   # adjust if you changed WORK_DIR
 cd /opt/jfrog/artifactory/var/tmp                                  # same directory as WORK_DIR
+./jf rt curl -XGET "/api/plugins/reload" --server-id source-server
 ./jf rt curl -XGET "/api/plugins" --server-id source-server
 ```
 
