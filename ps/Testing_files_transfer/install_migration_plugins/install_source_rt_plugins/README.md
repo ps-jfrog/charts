@@ -56,8 +56,14 @@ echo "📡 Verifying connection with Artifactory..."
 c) Next install the data transfer plugin:
 
 ```
-jf rt transfer-plugin-install source-server [--home-dir /opt/jfrog]
+./jf rt transfer-plugin-install source-server --home-dir /opt/jfrog
 ```
+You should see below output:
+```
+18:11:01 [🔵Info] Installing 'data-transfer' plugin...
+18:11:08 [🔵Info] The data-transfer plugin installed successfully.
+```
+
 Otherwise use one of the following methods:
 
 ### Method 1: Kubernetes-based Artifactory Installation
