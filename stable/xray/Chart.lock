@@ -7,9 +7,9 @@ dependencies:
   version: 15.4.1
 - name: catalog
   repository: https://charts.jfrog.io/
-  version: 101.30.13
+  version: 101.37.2
 - name: valkey
   repository: https://charts.jfrog.io/
   version: 3.0.16
-digest: sha256:3d3301ca9cc3d251e0e03da1353d87b1c6fa01a5f57523a68c0082aeb09add25
-generated: "2026-03-03T16:44:00.290751+05:30"
+digest: sha256:a404a76787297e6e8768b45eff2dd983ad630426ba057cd25d10d90e60558653
+generated: "2026-04-30T07:10:23.813007418Z"
