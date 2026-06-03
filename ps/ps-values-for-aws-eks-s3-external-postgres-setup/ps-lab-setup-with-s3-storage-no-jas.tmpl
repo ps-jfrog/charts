@@ -112,9 +112,12 @@ xray:
   common:
     persistence:
       size: 200Gi
-    extraEnvVars: |
-      - name: "JF_SHARED_RABBITMQ_VHOST"
-        value: "xray"
+    # JF_SHARED_RABBITMQ_VHOST must NOT be set when haQuorum is enabled.
+    # With haQuorum=true the chart uses "xray_haq" automatically; setting "xray" here
+    # overrides that and puts all queues in the wrong vhost.
+    # extraEnvVars: |
+    #   - name: "JF_SHARED_RABBITMQ_VHOST"
+    #     value: "xray"
   # serviceAccount:
   #   create: true
   # rbac:
