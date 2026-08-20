@@ -100,10 +100,10 @@ initContainers:
   resources:
     requests:
       memory: "50Mi"
-      cpu: "10m"
+      cpu: "12m"
     limits:
       memory: "1Gi"
-      cpu: "1"
+      cpu: "250m"
 
 # For supporting pulling from private registries
 imagePullSecrets:
