@@ -27,8 +27,8 @@ set -euo pipefail
 #     - CLOUD_ARTIFACTORY_AUTHORITY (e.g., "app2")
 #     - NEXUS_ADMIN_TOKEN (or NEXUS_ADMIN_USERNAME + NEXUS_ADMIN_PASSWORD)
 #   OPTIONAL:
-#     - NEXUS_REPOSITORIES_FILE (default: "repos.txt")
-#     - NEXUS_RUN_ID (required if using repos.txt)
+#     - SOURCE_NEXUS_REPOS (comma-separated list, e.g., "repo1,repo2,repo3")
+#       OR NEXUS_REPOSITORIES_FILE (default: "repos.txt") + NEXUS_RUN_ID (auto-generated if unset)
 #     - ARTIFACTORY_DISCOVERY_METHOD (default: "artifactory_aql")
 #     - CLOUD_ARTIFACTORY_REPOS (comma-separated list, e.g., "repo1,repo2,repo3")
 #
@@ -40,8 +40,8 @@ set -euo pipefail
 #     - SH_ARTIFACTORY_AUTHORITY (e.g., "app1")
 #     - NEXUS_ADMIN_TOKEN (or NEXUS_ADMIN_USERNAME + NEXUS_ADMIN_PASSWORD)
 #   OPTIONAL:
-#     - NEXUS_REPOSITORIES_FILE (default: "repos.txt")
-#     - NEXUS_RUN_ID (required if using repos.txt)
+#     - SOURCE_NEXUS_REPOS (comma-separated list, e.g., "repo1,repo2,repo3")
+#       OR NEXUS_REPOSITORIES_FILE (default: "repos.txt") + NEXUS_RUN_ID (auto-generated if unset)
 #     - ARTIFACTORY_DISCOVERY_METHOD (default: "artifactory_aql")
 #     - SH_ARTIFACTORY_REPOS (comma-separated list, e.g., "repo1,repo2,repo3")
 # ============================================================================
@@ -61,6 +61,7 @@ export COMMAND_NAME="${COMMAND_NAME:-jf compare}"
 export JFROG_CLI_LOG_LEVEL="${JFROG_CLI_LOG_LEVEL:-DEBUG}"
 export JFROG_CLI_LOG_TIMESTAMP="${JFROG_CLI_LOG_TIMESTAMP:-DATE_AND_TIME}"
 export NEXUS_REPOSITORIES_FILE="${NEXUS_REPOSITORIES_FILE:-repos.txt}"
+export SOURCE_NEXUS_REPOS="${SOURCE_NEXUS_REPOS:-}"
 
 # Function to display help text
 show_help() {
@@ -104,9 +105,11 @@ Case b) Compare Nexus to Artifactory Cloud (no SH Artifactory):
   # export NEXUS_ADMIN_USERNAME="admin"
   # export NEXUS_ADMIN_PASSWORD="password"
   
-  # OPTIONAL (if using repos.txt file):
-  export NEXUS_REPOSITORIES_FILE="repos.txt"
-  export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+  # OPTIONAL (simplest: comma-separated list of Nexus repos to crawl):
+  export SOURCE_NEXUS_REPOS="repo1,repo2,repo3"
+  # OR use a file instead (one repo per line):
+  # export NEXUS_REPOSITORIES_FILE="repos.txt"
+  # export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"  # auto-generated if unset
   # OPTIONAL (filter specific Artifactory repositories):
   export CLOUD_ARTIFACTORY_REPOS="repo1,repo2,repo3"
   
@@ -126,9 +129,11 @@ Case c) Compare Nexus to Artifactory SH:
   # export NEXUS_ADMIN_USERNAME="admin"
   # export NEXUS_ADMIN_PASSWORD="password"
   
-  # OPTIONAL (if using repos.txt file):
-  export NEXUS_REPOSITORIES_FILE="repos.txt"
-  export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+  # OPTIONAL (simplest: comma-separated list of Nexus repos to crawl):
+  export SOURCE_NEXUS_REPOS="repo1,repo2,repo3"
+  # OR use a file instead (one repo per line):
+  # export NEXUS_REPOSITORIES_FILE="repos.txt"
+  # export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"  # auto-generated if unset
   # OPTIONAL (filter specific Artifactory repositories):
   export SH_ARTIFACTORY_REPOS="repo1,repo2,repo3"
   
@@ -170,8 +175,11 @@ Case c) Required:
 Optional (all scenarios):
   ARTIFACTORY_DISCOVERY_METHOD      - Discovery method: artifactory_aql or artifactory_filelist (default: artifactory_aql)
   COMMAND_NAME                      - Command to use (default: jf compare)
-  NEXUS_REPOSITORIES_FILE           - File with Nexus repository list (default: repos.txt)
-  NEXUS_RUN_ID                      - Run ID for grouping Nexus repositories (required if using repos.txt)
+  SOURCE_NEXUS_REPOS                - Comma-separated list of Nexus repositories to crawl (optional; takes
+                                       precedence over NEXUS_REPOSITORIES_FILE)
+  NEXUS_REPOSITORIES_FILE           - File with Nexus repository list, one per line (default: repos.txt);
+                                       ignored when SOURCE_NEXUS_REPOS is set
+  NEXUS_RUN_ID                      - Run ID for grouping Nexus repositories (auto-generated if unset)
   SH_ARTIFACTORY_REPOS              - Comma-separated list of Artifactory SH repositories to compare (optional)
   CLOUD_ARTIFACTORY_REPOS           - Comma-separated list of Artifactory Cloud repositories to compare (optional)
 
@@ -393,25 +401,46 @@ if [ "$COMPARE_SOURCE_NEXUS" == "1" ]; then
         exit 1
     fi
 
-    if [ -f "$NEXUS_REPOSITORIES_FILE" ]; then
-        # Group all command executions, per-server, to a single run_id
-        if [ -z "${NEXUS_RUN_ID:-}" ]; then
-            echo "Error: NEXUS_RUN_ID is not set, generate a new one: https://uuidv7.org/"
-            echo ""
-            echo "Run the following command to set it (replace the example UUID with the one from the website):"
-            echo "export NEXUS_RUN_ID=\"019a5a07-cedd-7e50-acb4-c51c1b0b1063\""
-            echo ""
-            echo "This is to group multiple repositories under a single run_id."
+    # Crawl a single Nexus repository and abort the script on failure.
+    crawl_nexus_repo() {
+        local repo="$1"
+        echo "Crawling repository: $repo"
+        if ! $COMMAND_NAME list "$SOURCE_NEXUS_AUTHORITY" --repository="$repo" --run-id="$NEXUS_RUN_ID"; then
+            echo "Error crawling repository: $repo"
             exit 1
         fi
+    }
 
-        while IFS= read -r repo; do
-            echo "Crawling repository: $repo"
-            
-            if ! $COMMAND_NAME list "$SOURCE_NEXUS_AUTHORITY" --repository="$repo" --run-id="$NEXUS_RUN_ID"; then
-                echo "Error crawling repository: $repo"
-                exit 1
+    if [ -n "$SOURCE_NEXUS_REPOS" ] || [ -f "$NEXUS_REPOSITORIES_FILE" ]; then
+        # Group all command executions, per-server, to a single run_id.
+        # Auto-generate one if the user didn't provide one.
+        if [ -z "${NEXUS_RUN_ID:-}" ]; then
+            if command -v uuidgen &> /dev/null; then
+                NEXUS_RUN_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+            else
+                NEXUS_RUN_ID="$(date +%Y%m%d%H%M%S)-$$"
             fi
+            echo "NEXUS_RUN_ID not set, auto-generated: $NEXUS_RUN_ID"
+        fi
+    fi
+
+    if [ -n "$SOURCE_NEXUS_REPOS" ]; then
+        # Comma-separated list takes precedence over NEXUS_REPOSITORIES_FILE
+        IFS=',' read -ra NEXUS_REPO_ARRAY <<< "$SOURCE_NEXUS_REPOS"
+        for repo in "${NEXUS_REPO_ARRAY[@]}"; do
+            repo="$(echo "$repo" | xargs)" # trim surrounding whitespace
+            [ -z "$repo" ] && continue
+            crawl_nexus_repo "$repo"
+        done
+    elif [ -f "$NEXUS_REPOSITORIES_FILE" ]; then
+        # Use `|| [ -n "$repo" ]` so the last repo is still processed when the
+        # file has no trailing newline (plain `read` returns non-zero at EOF,
+        # which would otherwise silently skip the final line's loop body).
+        while IFS= read -r repo || [ -n "$repo" ]; do
+            # Skip blank lines and comments
+            [ -z "$repo" ] && continue
+            case "$repo" in \#*) continue ;; esac
+            crawl_nexus_repo "$repo"
         done < "$NEXUS_REPOSITORIES_FILE"
     else
         $COMMAND_NAME list "$SOURCE_NEXUS_AUTHORITY"

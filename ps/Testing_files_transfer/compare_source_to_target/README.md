@@ -61,6 +61,9 @@ export CLOUD_ARTIFACTORY_BASE_URL="http://34.73.108.59/artifactory/"
 export CLOUD_ARTIFACTORY_AUTHORITY="app2"
 export NEXUS_ADMIN_TOKEN="your-nexus-token-here"
 
+# Optional: Filter specific Nexus repositories (comma-separated)
+export SOURCE_NEXUS_REPOS="docker-local,maven-releases"
+
 # Optional: Filter specific Artifactory repositories
 export CLOUD_ARTIFACTORY_REPOS="docker-local,maven-releases"
 
@@ -80,6 +83,9 @@ export SOURCE_NEXUS_AUTHORITY="stnexus"
 export SH_ARTIFACTORY_BASE_URL="http://35.229.108.92/artifactory/"
 export SH_ARTIFACTORY_AUTHORITY="app1"
 export NEXUS_ADMIN_TOKEN="your-nexus-token-here"
+
+# Optional: Filter specific Nexus repositories (comma-separated)
+export SOURCE_NEXUS_REPOS="docker-local,maven-releases"
 
 # Optional: Filter specific Artifactory repositories
 export SH_ARTIFACTORY_REPOS="docker-local,maven-releases"
@@ -133,8 +139,9 @@ These flags determine which comparison scenario to run:
 
 - `ARTIFACTORY_DISCOVERY_METHOD` - Discovery method: `artifactory_aql` or `artifactory_filelist` (default: `artifactory_aql`)
 - `COMMAND_NAME` - Command to use (default: `jf compare`)
-- `NEXUS_REPOSITORIES_FILE` - File with Nexus repository list (default: `repos.txt`)
-- `NEXUS_RUN_ID` - Run ID for grouping Nexus repositories (required if using `repos.txt`)
+- `SOURCE_NEXUS_REPOS` - Comma-separated list of Nexus repositories to crawl (e.g., `"repo1,repo2,repo3"`). Takes precedence over `NEXUS_REPOSITORIES_FILE` when set.
+- `NEXUS_REPOSITORIES_FILE` - File with Nexus repository list, one per line (default: `repos.txt`). Ignored when `SOURCE_NEXUS_REPOS` is set.
+- `NEXUS_RUN_ID` - Run ID for grouping Nexus repositories. Optional — auto-generated (via `uuidgen`, or a timestamp fallback) if not set, whenever `SOURCE_NEXUS_REPOS` or `NEXUS_REPOSITORIES_FILE` is used.
 - `SH_ARTIFACTORY_REPOS` - Comma-separated list of Artifactory SH repositories to compare (e.g., `"repo1,repo2,repo3"`)
 - `CLOUD_ARTIFACTORY_REPOS` - Comma-separated list of Artifactory Cloud repositories to compare (e.g., `"repo1,repo2,repo3"`)
 - `JFROG_CLI_LOG_LEVEL` - Log level (default: `DEBUG`)
@@ -171,6 +178,8 @@ This is useful when you want to:
 
 **Note:** The `--repos` parameter is passed to the `jf compare list` command when Artifactory is used as source (Case a) or target (Case b, c).
 
+For Nexus, use **`SOURCE_NEXUS_REPOS`** instead (see [Selecting Nexus Repositories](#selecting-nexus-repositories) below) — Nexus repositories are crawled one at a time via `jf compare list ... --repository=<repo>` rather than a single `--repos` call.
+
 ## Features
 
 - **Automatic validation**: Validates all required environment variables based on the selected comparison scenario
@@ -206,9 +215,20 @@ export CLOUD_ARTIFACTORY_AUTHORITY="app2"
 ./compare-artifacts.sh --help
 ```
 
-### Using Nexus Repository File
+### Selecting Nexus Repositories
 
-If you want to compare specific Nexus repositories, create a `repos.txt` file with one repository name per line:
+There are two ways to tell the script which Nexus repositories to crawl:
+
+**Option 1 (simplest): `SOURCE_NEXUS_REPOS`** — a comma-separated list, no file or run ID required:
+
+```bash
+export SOURCE_NEXUS_REPOS="docker-hosted,maven-releases,npm-releases"
+
+# Run the script
+./compare-artifacts.sh
+```
+
+**Option 2: `NEXUS_REPOSITORIES_FILE`** — a file with one repository name per line. This is only used when `SOURCE_NEXUS_REPOS` is not set:
 
 ```bash
 # Create repos.txt
@@ -218,11 +238,16 @@ maven-releases
 npm-releases
 EOF
 
-# Set NEXUS_RUN_ID (required when using repos.txt)
-export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+export NEXUS_REPOSITORIES_FILE="repos.txt"
 
 # Run the script
 ./compare-artifacts.sh
+```
+
+With either option, all repositories crawled in that run are grouped under a single `NEXUS_RUN_ID`. You don't need to set it yourself — the script auto-generates one (via `uuidgen`, falling back to a timestamp) and prints the value it picked. Set `NEXUS_RUN_ID` explicitly only if you want to control or reuse the value:
+
+```bash
+export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
 ```
 
 ## Output
@@ -276,7 +301,7 @@ The script includes comprehensive error handling:
 - **Missing variables**: Lists all missing required variables with example values
 - **Invalid scenarios**: Validates that at least one comparison flag is enabled
 - **Nexus credentials**: Checks for either token or username/password
-- **Repository file**: Validates NEXUS_RUN_ID when using repos.txt
+- **Nexus run ID**: Auto-generated when crawling via `SOURCE_NEXUS_REPOS` or `NEXUS_REPOSITORIES_FILE` if `NEXUS_RUN_ID` isn't set, so this no longer blocks the script
 - **Command failures**: Exits on any command failure with clear error messages
 
 **Example error output:**
@@ -436,9 +461,11 @@ export NEXUS_ADMIN_TOKEN="your-token"
 # export NEXUS_ADMIN_USERNAME="admin"
 # export NEXUS_ADMIN_PASSWORD="password"
 
-# OPTIONAL (if using repos.txt file):
-export NEXUS_REPOSITORIES_FILE="repos.txt"
-export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+# OPTIONAL (simplest: comma-separated list of Nexus repos to crawl):
+export SOURCE_NEXUS_REPOS="repo1,repo2,repo3"
+# OR use a file instead (one repo per line):
+# export NEXUS_REPOSITORIES_FILE="repos.txt"
+# export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"  # auto-generated if unset
 
 ./compare-artifacts.sh
 ```
@@ -463,9 +490,11 @@ export NEXUS_ADMIN_TOKEN="your-token"
 # export NEXUS_ADMIN_USERNAME="admin"
 # export NEXUS_ADMIN_PASSWORD="password"
 
-# OPTIONAL (if using repos.txt file):
-export NEXUS_REPOSITORIES_FILE="repos.txt"
-export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"
+# OPTIONAL (simplest: comma-separated list of Nexus repos to crawl):
+export SOURCE_NEXUS_REPOS="repo1,repo2,repo3"
+# OR use a file instead (one repo per line):
+# export NEXUS_REPOSITORIES_FILE="repos.txt"
+# export NEXUS_RUN_ID="019a5a07-cedd-7e50-acb4-c51c1b0b1063"  # auto-generated if unset
 
 ./compare-artifacts.sh
 ```
