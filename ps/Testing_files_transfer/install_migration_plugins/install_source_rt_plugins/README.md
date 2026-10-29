@@ -65,7 +65,7 @@ You should see below output:
 ```
 d) Then when  the source artifactory has a HA setup, from any client machine which has jf cli configured to the source JPD you can reload the plugin from the loadbalancer url using:
 ```
-jf rt curl -XGET "/api/plugins/reload" --server-id source-server
+jf rt curl -XPOST "/api/plugins/reload" --server-id source-server
 
 # Then verify using:
 jf rt curl -XGET "/api/plugins" --server-id source-server
